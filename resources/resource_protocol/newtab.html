@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="eo">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark light">
+    <title>LibreNav — Nova langeto</title>
+    <link rel="stylesheet" href="resource:///newtab.css">
+    <script src="resource:///newtab.js" defer></script>
+  </head>
+  <body>
+    <div id="bg-overlay" class="bg-overlay" aria-hidden="true"></div>
+
+    <!-- Top Navigation Bar -->
+    <header class="topbar">
+      <nav class="nav-links" aria-label="Internaj navigiloj">
+        <a href="servo:preferences" class="nav-pill" data-i18n="preferences">Agordoj</a>
+        <a href="servo:config" class="nav-pill" data-i18n="information">Informoj</a>
+      </nav>
+      <div class="topbar-right">
+        <label for="language" class="visually-hidden" data-i18n="language">Lingvo</label>
+        <select id="language" aria-label="Lingvo" class="lang-select">
+          <option value="eo">Esperanto</option>
+          <option value="fr">Français</option>
+          <option value="en">English</option>
+          <option value="es">Español</option>
+        </select>
+        <button id="profile-avatar-btn" class="profile-btn" type="button" aria-label="Profilo" title="Profilo">
+          <span id="profile-initial">L</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area: Logo, Chrome Omnibox, Shortcuts Grid -->
+    <main>
+      <div class="hero-brand">
+        <img class="mark" src="resource:///librenav-mark.svg" alt="LibreNav Logo">
+        <h1>LibreNav</h1>
+        <p class="engine" data-i18n="engine">Retumilo funkciigita de la motoro Servo</p>
+      </div>
+
+      <!-- Search Form Powered by RevSearch -->
+      <form id="search-form" action="https://revsearch.revlibertaire.com/search.php" method="get" role="search" class="omnibox-search">
+        <div class="search-icon-wrapper" aria-hidden="true">
+          <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="7"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+        </div>
+        <label class="visually-hidden" for="search-input" data-i18n="searchLabel">Serĉi en la reto</label>
+        <input
+          id="search-input"
+          name="q"
+          type="search"
+          data-i18n-placeholder="searchPlaceholder"
+          placeholder="Serĉu en la reto aŭ enigu retadreson"
+          autocomplete="off"
+          autofocus
+        >
+        <button id="search-clear-btn" type="button" class="search-clear-btn" aria-label="Viŝi serĉon" style="display: none;">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <button type="submit" class="search-submit-btn" aria-label="Serĉi" data-i18n="searchButton">
+          Serĉi
+        </button>
+      </form>
+
+      <!-- Customizable Shortcuts Grid -->
+      <section id="shortcuts-section" class="shortcuts-section" aria-label="Rapidaj ligiloj">
+        <div id="shortcuts-grid" class="shortcuts-grid">
+          <!-- Populated dynamically via newtab.js -->
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Footer & Customize Button -->
+    <footer class="bottom-bar">
+      <div class="footer-info">
+        <span data-i18n="privacy">Neniu telemetrio estas aldonita de LibreNav.</span>
+      </div>
+      <button id="customize-btn" type="button" class="customize-btn" aria-label="Agordi LibreNav" title="Agordi LibreNav" data-i18n-title="customizeLibreNav">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 20h9"></path>
+          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
+        </svg>
+        <span data-i18n="customizeLibreNav">Agordi LibreNav</span>
+      </button>
+    </footer>
+
+    <!-- Add / Edit Shortcut Modal Dialog -->
+    <div id="shortcut-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="shortcut-modal-title" data-i18n="addShortcutTitle">Aldoni rapidan ligilon</h3>
+          <button type="button" class="modal-close-btn" id="shortcut-close-x" aria-label="Fermi">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        <form id="shortcut-form">
+          <input type="hidden" id="shortcut-id" value="">
+          <div class="form-group">
+            <label for="shortcut-name" data-i18n="shortcutName">Nomo</label>
+            <input id="shortcut-name" type="text" data-i18n-placeholder="namePlaceholder" placeholder="Wikipedia" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="shortcut-url" data-i18n="shortcutUrl">URL</label>
+            <input id="shortcut-url" type="text" placeholder="https://..." required autocomplete="off">
+          </div>
+          <div class="modal-footer">
+            <button type="button" id="shortcut-delete-btn" class="btn-danger" style="display: none;" data-i18n="delete">Forigi</button>
+            <div class="modal-footer-right">
+              <button type="button" id="shortcut-cancel-btn" class="btn-secondary" data-i18n="cancel">Nuligi</button>
+              <button type="submit" id="shortcut-save-btn" class="btn-primary" data-i18n="done">Konservi</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Customize LibreNav Panel Modal -->
+    <div id="customize-modal" class="modal-backdrop" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-card customize-panel">
+        <div class="modal-header">
+          <h3 data-i18n="customizeLibreNavTitle">Agordi ĉi tiun paĝon</h3>
+          <button type="button" class="modal-close-btn" id="customize-close-x" aria-label="Fermi">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="customize-body">
+          <!-- Custom Background Section -->
+          <section class="customize-section">
+            <h4 data-i18n="backgroundSection">Fona bildo kaj foto</h4>
+            <div class="bg-control-buttons">
+              <label for="bg-file-input" class="btn-secondary btn-file">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span data-i18n="uploadFromDevice">Alŝuti foton el aparato</span>
+              </label>
+              <input type="file" id="bg-file-input" accept="image/*" class="visually-hidden">
+
+              <button type="button" id="btn-reset-bg" class="btn-secondary" data-i18n="resetBackground">
+                Restaŭri defaŭltan fonon
+              </button>
+            </div>
+
+            <div class="form-group url-bg-group">
+              <label for="bg-url-input" data-i18n="imageUrlLabel">Aŭ enigu adreson de fona bildo</label>
+              <div class="url-input-wrap">
+                <input id="bg-url-input" type="text" data-i18n-placeholder="urlBgPlaceholder" placeholder="https://...">
+                <button type="button" id="btn-apply-url-bg" class="btn-primary" data-i18n="apply">Apliki</button>
+              </div>
+            </div>
+
+            <!-- Preset Themes -->
+            <label class="preset-label" data-i18n="presetThemes">Antaŭdifinitaj etosoj</label>
+            <div class="preset-grid">
+              <button type="button" class="preset-btn preset-default" data-theme="default" title="Defaŭlta"></button>
+              <button type="button" class="preset-btn preset-aurora" data-theme="aurora" title="Aŭroro"></button>
+              <button type="button" class="preset-btn preset-space" data-theme="space" title="Kosmo"></button>
+              <button type="button" class="preset-btn preset-sunset" data-theme="sunset" title="Sunsubiro"></button>
+              <button type="button" class="preset-btn preset-ocean" data-theme="ocean" title="Oceano"></button>
+            </div>
+          </section>
+
+          <!-- Color Accent Section -->
+          <section class="customize-section">
+            <h4 data-i18n="accentColorSection">Akcenta koloro</h4>
+            <div class="accent-swatches">
+              <button type="button" class="color-swatch swatch-emerald active" data-color="#10b981" title="Smeraldo"></button>
+              <button type="button" class="color-swatch swatch-blue" data-color="#1a73e8" title="Bluo"></button>
+              <button type="button" class="color-swatch swatch-cyan" data-color="#06b6d4" title="Cejano"></button>
+              <button type="button" class="color-swatch swatch-purple" data-color="#8b5cf6" title="Violo"></button>
+              <button type="button" class="color-swatch swatch-rose" data-color="#f43f5e" title="Rozo"></button>
+              <button type="button" class="color-swatch swatch-amber" data-color="#f59e0b" title="Ambro"></button>
+            </div>
+          </section>
+
+          <!-- Shortcuts Visibility Toggle -->
+          <section class="customize-section">
+            <div class="toggle-row">
+              <label for="toggle-shortcuts-cb" data-i18n="showShortcutsToggle">Montri rapidajn ligilojn</label>
+              <input type="checkbox" id="toggle-shortcuts-cb" checked class="toggle-checkbox">
+            </div>
+          </section>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="customize-done-btn" class="btn-primary" data-i18n="done">Konservi</button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">LibreNav</title>
+  <defs>
+    <linearGradient id="horizon" x1="20" y1="18" x2="108" y2="110" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67e8f9"/>
+      <stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="108" height="108" rx="30" fill="#12141c"/>
+  <circle cx="64" cy="64" r="46" fill="none" stroke="#303746" stroke-width="4"/>
+  <path d="M38 34v58h34" fill="none" stroke="#f4f6f8" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M62 68 99 29 86 78 72 63Z" fill="url(#horizon)" stroke="#090a0f" stroke-width="3" stroke-linejoin="round"/>
+</svg>
