@@ -28,7 +28,7 @@ pub struct ServoProtocolHandler {}
 
 impl ProtocolHandler for ServoProtocolHandler {
     fn privileged_paths(&self) -> &'static [&'static str] {
-        &["config", "preferences"]
+        &["config", "preferences", "ublock", "ublock-dashboard"]
     }
 
     fn is_fetchable(&self) -> bool {
@@ -43,7 +43,33 @@ impl ProtocolHandler for ServoProtocolHandler {
     ) -> Pin<Box<dyn Future<Output = Response> + Send>> {
         let url = request.current_url();
 
-        match url.path() {
+        let path = url.path();
+        if path == "ublock" || path == "ublock/" {
+            return ResourceProtocolHandler::response_for_path(
+                request,
+                done_chan,
+                context,
+                "/ublock/popup-fenix.html",
+            );
+        }
+        if path == "ublock-dashboard" || path == "ublock/dashboard" {
+            return ResourceProtocolHandler::response_for_path(
+                request,
+                done_chan,
+                context,
+                "/ublock/dashboard.html",
+            );
+        }
+        if path.starts_with("ublock/") {
+            return ResourceProtocolHandler::response_for_path(
+                request,
+                done_chan,
+                context,
+                &format!("/{path}"),
+            );
+        }
+
+        match path {
             "config" => ResourceProtocolHandler::response_for_path(
                 request,
                 done_chan,

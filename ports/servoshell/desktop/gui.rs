@@ -180,9 +180,14 @@ pub(crate) enum GuiText {
     NoExtensions,
     UblockPowerOn,
     UblockPowerOff,
-    UblockRequestsBlocked,
-    UblockTotalBlocked,
-    UblockDashboard,
+    InstallExtension,
+    InstallFromChromeStore,
+    InstallFromFirefoxAddons,
+    InstallLocalFile,
+    ExtensionInputPlaceholder,
+    PopularExtensions,
+    InstalledBadge,
+    UblockOpenPopup,
 }
 
 fn t(text: GuiText, lang: impl AsRef<str>) -> &'static str {
@@ -242,9 +247,14 @@ fn t(text: GuiText, lang: impl AsRef<str>) -> &'static str {
             GuiText::NoExtensions => "Aucune extension installée.",
             GuiText::UblockPowerOn => "Protection active sur ce site",
             GuiText::UblockPowerOff => "Protection désactivée sur ce site",
-            GuiText::UblockRequestsBlocked => "Bloqués sur cette page",
-            GuiText::UblockTotalBlocked => "Depuis l'installation",
-            GuiText::UblockDashboard => "Ouvrir le tableau de bord",
+            GuiText::InstallExtension => "Installer une extension",
+            GuiText::InstallFromChromeStore => "Installer depuis Chrome Web Store",
+            GuiText::InstallFromFirefoxAddons => "Installer depuis Firefox Add-ons",
+            GuiText::InstallLocalFile => "Installer un fichier local (.crx, .xpi, .zip, .user.js)",
+            GuiText::ExtensionInputPlaceholder => "Coller une URL Chrome Web Store, Firefox Add-ons, ou chemin de fichier...",
+            GuiText::PopularExtensions => "Extensions populaires en 1 clic",
+            GuiText::InstalledBadge => "✓ Installé",
+            GuiText::UblockOpenPopup => "Ouvrir le panneau uBlock Origin",
         },
         "en" => match text {
             GuiText::Back => "Back",
@@ -301,9 +311,14 @@ fn t(text: GuiText, lang: impl AsRef<str>) -> &'static str {
             GuiText::NoExtensions => "No extensions installed.",
             GuiText::UblockPowerOn => "Protection enabled on this site",
             GuiText::UblockPowerOff => "Protection disabled on this site",
-            GuiText::UblockRequestsBlocked => "Blocked on this page",
-            GuiText::UblockTotalBlocked => "Since installation",
-            GuiText::UblockDashboard => "Open the dashboard",
+            GuiText::InstallExtension => "Install an extension",
+            GuiText::InstallFromChromeStore => "Install from Chrome Web Store",
+            GuiText::InstallFromFirefoxAddons => "Install from Firefox Add-ons",
+            GuiText::InstallLocalFile => "Install local file (.crx, .xpi, .zip, .user.js)",
+            GuiText::ExtensionInputPlaceholder => "Paste Chrome Web Store URL, Firefox Add-ons URL, or file path...",
+            GuiText::PopularExtensions => "Popular 1-click extensions",
+            GuiText::InstalledBadge => "✓ Installed",
+            GuiText::UblockOpenPopup => "Open uBlock Origin popup",
         },
         "es" => match text {
             GuiText::Back => "Atrás",
@@ -360,9 +375,14 @@ fn t(text: GuiText, lang: impl AsRef<str>) -> &'static str {
             GuiText::NoExtensions => "No hay extensiones instaladas.",
             GuiText::UblockPowerOn => "Protección activada en este sitio",
             GuiText::UblockPowerOff => "Protección desactivada en este sitio",
-            GuiText::UblockRequestsBlocked => "Bloqueados en esta página",
-            GuiText::UblockTotalBlocked => "Desde la instalación",
-            GuiText::UblockDashboard => "Abrir el panel de control",
+            GuiText::InstallExtension => "Instalar una extensión",
+            GuiText::InstallFromChromeStore => "Instalar desde Chrome Web Store",
+            GuiText::InstallFromFirefoxAddons => "Instalar desde Firefox Add-ons",
+            GuiText::InstallLocalFile => "Instalar archivo local (.crx, .xpi, .zip, .user.js)",
+            GuiText::ExtensionInputPlaceholder => "Pegar URL de Chrome Web Store, Firefox Add-ons, o ruta de archivo...",
+            GuiText::PopularExtensions => "Extensiones populares en 1 clic",
+            GuiText::InstalledBadge => "✓ Instalado",
+            GuiText::UblockOpenPopup => "Abrir el panel uBlock Origin",
         },
         _ => match text {
             GuiText::Back => "Reen",
@@ -419,9 +439,14 @@ fn t(text: GuiText, lang: impl AsRef<str>) -> &'static str {
             GuiText::NoExtensions => "Neniu etendaĵo instalita.",
             GuiText::UblockPowerOn => "Protekto aktiva en ĉi tiu retejo",
             GuiText::UblockPowerOff => "Protekto malaktiva en ĉi tiu retejo",
-            GuiText::UblockRequestsBlocked => "Blokitaj en ĉi tiu paĝo",
-            GuiText::UblockTotalBlocked => "Ekde instalado",
-            GuiText::UblockDashboard => "Malfermi la stirpanelon",
+            GuiText::InstallExtension => "Instali etendaĵon",
+            GuiText::InstallFromChromeStore => "Instali el Chrome Web Store",
+            GuiText::InstallFromFirefoxAddons => "Instali el Firefox Add-ons",
+            GuiText::InstallLocalFile => "Instali lokan dosieron (.crx, .xpi, .zip, .user.js)",
+            GuiText::ExtensionInputPlaceholder => "Algluu retadreson de Chrome Web Store, Firefox Add-ons, aŭ dosiervojon...",
+            GuiText::PopularExtensions => "Popularaj etendaĵoj per 1 klako",
+            GuiText::InstalledBadge => "✓ Instalita",
+            GuiText::UblockOpenPopup => "Malfermi la panelon de uBlock Origin",
         },
     }
 }
@@ -486,6 +511,12 @@ pub struct Gui {
     /// AccessKit tree updates pending the next egui tick.
     /// This allows us to ensure that graft nodes are sent before the subtrees they graft.
     pending_accesskit_updates: Vec<accesskit::TreeUpdate>,
+
+    /// Text input buffer for installing extensions from URL or local file path.
+    ext_install_input: String,
+
+    /// Last status message from extension installation (is_success, message).
+    ext_install_status: Option<(bool, String)>,
 }
 
 fn truncate_with_ellipsis(input: &str, max_length: usize) -> String {
@@ -596,6 +627,244 @@ fn list_installed_extensions() -> Vec<ExtensionInfo> {
     }
     list.sort_by(|a, b| a.name.cmp(&b.name));
     list
+}
+
+fn find_ext_id(input: &str) -> Result<String, String> {
+    let trimmed = input.trim();
+    if let Some(pos) = trimmed.rfind('/') {
+        let candidate = &trimmed[pos + 1..];
+        let candidate = candidate.split('?').next().unwrap_or(candidate);
+        let candidate = candidate.split('#').next().unwrap_or(candidate);
+        if candidate.len() == 32 && candidate.chars().all(|c| ('a'..='p').contains(&c)) {
+            return Ok(candidate.to_string());
+        }
+    }
+    let bytes = trimmed.as_bytes();
+    for window in bytes.windows(32) {
+        if window.iter().all(|&b| (b'a'..=b'p').contains(&b)) {
+            return Ok(String::from_utf8_lossy(window).to_string());
+        }
+    }
+    Err("Identifiant Chrome introuvable (32 lettres de 'a' à 'p' attendues).".into())
+}
+
+fn extract_amo_slug(input: &str) -> Result<String, String> {
+    let trimmed = input.trim();
+    if let Some(pos) = trimmed.find("/addon/") {
+        let after = &trimmed[pos + 7..];
+        let slug = after.trim_matches('/').split('/').next().unwrap_or(after);
+        let slug = slug.split('?').next().unwrap_or(slug);
+        let slug = slug.split('#').next().unwrap_or(slug);
+        if !slug.is_empty() {
+            return Ok(slug.to_string());
+        }
+    }
+    let clean = trimmed.trim_matches('/').split('?').next().unwrap_or(trimmed);
+    let clean = clean.split('#').next().unwrap_or(clean);
+    if !clean.is_empty() && !clean.contains('/') && !clean.contains(' ') {
+        return Ok(clean.to_string());
+    }
+    Err("Identifiant ou URL Firefox Add-ons non reconnu.".into())
+}
+
+fn install_chrome_extension(id_or_url: &str) -> Result<String, String> {
+    let ext_id = find_ext_id(id_or_url)?;
+    let Some(dest_dir) = extensions_directory_path() else {
+        return Err("Dossier des extensions introuvable.".into());
+    };
+    let _ = fs::create_dir_all(&dest_dir);
+
+    let crx_url = format!(
+        "https://clients2.google.com/service/update2/crx?response=redirect&prod=chromecrx&prodchannel=&prodversion=141.0.7390.55&lang=en-US&acceptformat=crx3,puff&x=id%3D{ext_id}%26installsource%3Dondemand%26uc"
+    );
+
+    let temp_crx = std::env::temp_dir().join(format!("{ext_id}.crx"));
+    let temp_zip = std::env::temp_dir().join(format!("{ext_id}.zip"));
+
+    let curl_status = std::process::Command::new("curl")
+        .args(["-sSL", "-A", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36", "-o"])
+        .arg(&temp_crx)
+        .arg(&crx_url)
+        .status()
+        .map_err(|e| format!("curl a échoué : {e}"))?;
+
+    if !curl_status.success() || !temp_crx.exists() {
+        return Err("Téléchargement du fichier CRX échoué.".into());
+    }
+
+    let crx_bytes = fs::read(&temp_crx).map_err(|e| format!("Lecture CRX échouée : {e}"))?;
+    let _ = fs::remove_file(&temp_crx);
+
+    let pk_magic = [0x50, 0x4b, 0x03, 0x04];
+    let Some(offset) = crx_bytes.windows(4).position(|w| w == pk_magic) else {
+        return Err("Fichier CRX invalide (en-tête ZIP introuvable).".into());
+    };
+
+    fs::write(&temp_zip, &crx_bytes[offset..]).map_err(|e| format!("Écriture ZIP échouée : {e}"))?;
+
+    let ext_target_dir = dest_dir.join(&ext_id);
+    let _ = fs::create_dir_all(&ext_target_dir);
+
+    let unzip_status = std::process::Command::new("unzip")
+        .args(["-q", "-o"])
+        .arg(&temp_zip)
+        .arg("-d")
+        .arg(&ext_target_dir)
+        .status();
+
+    let _ = fs::remove_file(&temp_zip);
+
+    if !unzip_status.map(|s| s.success()).unwrap_or(false) {
+        return Err("Extraction de l'archive de l'extension échouée.".into());
+    }
+
+    let manifest_path = ext_target_dir.join("manifest.json");
+    let mut name = ext_id.clone();
+    let mut ver = String::from("1.0");
+    if let Ok(content) = fs::read_to_string(&manifest_path)
+        && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
+    {
+        if let Some(n) = val.get("name").and_then(|v| v.as_str()) {
+            name = n.to_string();
+        }
+        if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
+            ver = v.to_string();
+        }
+    }
+
+    Ok(format!("Extension '{name}' (v{ver}) installée avec succès !"))
+}
+
+fn install_firefox_extension(slug_or_url: &str) -> Result<String, String> {
+    let slug = extract_amo_slug(slug_or_url)?;
+    let Some(dest_dir) = extensions_directory_path() else {
+        return Err("Dossier des extensions introuvable.".into());
+    };
+    let _ = fs::create_dir_all(&dest_dir);
+
+    let xpi_url = format!("https://addons.mozilla.org/firefox/downloads/latest/{slug}/latest.xpi");
+    let temp_xpi = std::env::temp_dir().join(format!("{slug}.xpi"));
+
+    let curl_status = std::process::Command::new("curl")
+        .args(["-sSL", "-A", "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0", "-o"])
+        .arg(&temp_xpi)
+        .arg(&xpi_url)
+        .status()
+        .map_err(|e| format!("curl a échoué : {e}"))?;
+
+    if !curl_status.success() || !temp_xpi.exists() {
+        return Err("Téléchargement du module Firefox échoué.".into());
+    }
+
+    let ext_target_dir = dest_dir.join(&slug);
+    let _ = fs::create_dir_all(&ext_target_dir);
+
+    let unzip_status = std::process::Command::new("unzip")
+        .args(["-q", "-o"])
+        .arg(&temp_xpi)
+        .arg("-d")
+        .arg(&ext_target_dir)
+        .status();
+
+    let _ = fs::remove_file(&temp_xpi);
+
+    if !unzip_status.map(|s| s.success()).unwrap_or(false) {
+        return Err("Extraction de l'archive XPI échouée.".into());
+    }
+
+    let manifest_path = ext_target_dir.join("manifest.json");
+    let mut name = slug.clone();
+    let mut ver = String::from("1.0");
+    if let Ok(content) = fs::read_to_string(&manifest_path)
+        && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
+    {
+        if let Some(n) = val.get("name").and_then(|v| v.as_str()) {
+            name = n.to_string();
+        }
+        if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
+            ver = v.to_string();
+        }
+    }
+
+    Ok(format!("Extension Firefox '{name}' (v{ver}) installée avec succès !"))
+}
+
+fn install_local_extension(path_str: &str) -> Result<String, String> {
+    let trimmed = path_str.trim().trim_matches('\'').trim_matches('"');
+    let src = Path::new(trimmed);
+    if !src.exists() {
+        return Err(format!("Le fichier '{}' n'existe pas.", src.display()));
+    }
+    let Some(dest_dir) = extensions_directory_path() else {
+        return Err("Dossier des extensions introuvable.".into());
+    };
+    let file_name = src.file_name().unwrap_or_default().to_string_lossy().to_string();
+
+    if file_name.ends_with(".user.js") || file_name.ends_with(".js") {
+        let dest = dest_dir.join(&file_name);
+        fs::copy(src, dest).map_err(|e| format!("Copie échouée : {e}"))?;
+        return Ok(format!("Userscript '{file_name}' installé avec succès !"));
+    }
+
+    if file_name.ends_with(".crx") {
+        let crx_bytes = fs::read(src).map_err(|e| format!("Lecture échouée : {e}"))?;
+        let pk_magic = [0x50, 0x4b, 0x03, 0x04];
+        let Some(offset) = crx_bytes.windows(4).position(|w| w == pk_magic) else {
+            return Err("Format CRX invalide.".into());
+        };
+        let stem = src.file_stem().unwrap_or_default().to_string_lossy();
+        let ext_target_dir = dest_dir.join(stem.as_ref());
+        let _ = fs::create_dir_all(&ext_target_dir);
+        let temp_zip = std::env::temp_dir().join("local_crx.zip");
+        fs::write(&temp_zip, &crx_bytes[offset..]).map_err(|e| format!("{e}"))?;
+        let _ = std::process::Command::new("unzip")
+            .args(["-q", "-o"])
+            .arg(&temp_zip)
+            .arg("-d")
+            .arg(&ext_target_dir)
+            .status();
+        let _ = fs::remove_file(&temp_zip);
+        return Ok(format!("Extension '{stem}' installée depuis fichier CRX !"));
+    }
+
+    if file_name.ends_with(".xpi") || file_name.ends_with(".zip") {
+        let stem = src.file_stem().unwrap_or_default().to_string_lossy();
+        let ext_target_dir = dest_dir.join(stem.as_ref());
+        let _ = fs::create_dir_all(&ext_target_dir);
+        let status = std::process::Command::new("unzip")
+            .args(["-q", "-o"])
+            .arg(src)
+            .arg("-d")
+            .arg(&ext_target_dir)
+            .status();
+        if status.map(|s| s.success()).unwrap_or(false) {
+            return Ok(format!("Archive '{stem}' extraite et installée !"));
+        } else {
+            return Err("Extraction de l'archive échouée.".into());
+        }
+    }
+
+    if src.is_dir() {
+        let stem = src.file_name().unwrap_or_default().to_string_lossy();
+        let ext_target_dir = dest_dir.join(stem.as_ref());
+        let _ = fs::create_dir_all(&ext_target_dir);
+        let _ = std::process::Command::new("cp")
+            .args(["-r", "."])
+            .current_dir(src)
+            .arg(&ext_target_dir)
+            .status();
+        return Ok(format!("Dossier d'extension '{stem}' installé !"));
+    }
+
+    Err("Format non supporté (utilisez .crx, .xpi, .zip, .user.js ou un dossier).".into())
+}
+
+fn delete_extension(path: &Path) -> Result<(), String> {
+    if path.is_dir() {
+        fs::remove_dir_all(path).map_err(|e| format!("Suppression échouée : {e}"))
+    } else {
+        fs::remove_file(path).map_err(|e| format!("Suppression échouée : {e}"))
+    }
 }
 
 #[cfg(any(
@@ -969,6 +1238,8 @@ impl Gui {
             },
             favicon_textures: Default::default(),
             pending_accesskit_updates: vec![],
+            ext_install_input: String::new(),
+            ext_install_status: None,
         }
     }
 
@@ -1284,6 +1555,8 @@ impl Gui {
         settings: &mut BrowserSettings,
         history: &mut Vec<String>,
         bookmarks: &mut HashSet<String>,
+        ext_install_input: &mut String,
+        ext_install_status: &mut Option<(bool, String)>,
         window: &ServoShellWindow,
     ) {
         if *surface == BrowserSurface::None {
@@ -1316,23 +1589,44 @@ impl Gui {
                         ui.horizontal(|ui| {
                             let back_btn = ui.add(
                                 egui::Button::new(
-                                    egui::RichText::new(t(GuiText::BackToBrowser, lang))
+                                    egui::RichText::new("←")
+                                        .size(18.0)
                                         .color(Color32::from_rgb(138, 180, 248))
-                                        .size(15.0)
                                         .strong(),
                                 )
-                                .frame(true),
-                            );
+                                .min_size(Vec2::new(36.0, 32.0))
+                                .corner_radius(6.0),
+                            ).on_hover_text(t(GuiText::BackToBrowser, lang));
                             if back_btn.clicked() {
                                 close = true;
                             }
-                            ui.add_space(16.0);
-                            ui.heading("LibreNav");
+                            ui.add_space(10.0);
+                            let surface_title = match active_surface {
+                                BrowserSurface::Settings => t(GuiText::Settings, lang),
+                                BrowserSurface::History => t(GuiText::History, lang),
+                                BrowserSurface::Bookmarks => t(GuiText::Bookmarks, lang),
+                                BrowserSurface::Extensions => t(GuiText::Extensions, lang),
+                                BrowserSurface::None => "",
+                            };
+                            ui.label(
+                                egui::RichText::new(format!("LibreNav › {}", surface_title))
+                                    .size(18.0)
+                                    .color(Color32::from_rgb(232, 234, 237))
+                                    .strong(),
+                            );
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     if ui
-                                        .button(egui::RichText::new("✕").size(16.0))
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new("✕")
+                                                    .size(16.0)
+                                                    .color(Color32::from_rgb(154, 160, 166)),
+                                            )
+                                            .min_size(Vec2::new(32.0, 32.0))
+                                            .corner_radius(6.0),
+                                        )
                                         .on_hover_text(t(GuiText::Close, lang))
                                         .clicked()
                                     {
@@ -1344,287 +1638,444 @@ impl Gui {
                         ui.add_space(18.0);
                         ui.horizontal_top(|ui| {
                             ui.vertical(|ui| {
-                                ui.set_width(210.0);
-                                if ui.button(t(GuiText::BackToBrowser, lang)).clicked() {
-                                    close = true;
+                                ui.set_width(240.0);
+                                ui.add_space(4.0);
+                                let items = [
+                                    (BrowserSurface::Settings, t(GuiText::Settings, lang)),
+                                    (BrowserSurface::Extensions, t(GuiText::Extensions, lang)),
+                                    (BrowserSurface::History, t(GuiText::History, lang)),
+                                    (BrowserSurface::Bookmarks, t(GuiText::Bookmarks, lang)),
+                                ];
+                                for (surf, label) in items {
+                                    let is_active = active_surface == surf;
+                                    let btn = egui::Button::selectable(
+                                        is_active,
+                                        egui::RichText::new(format!("  {}", label))
+                                            .size(14.0)
+                                            .color(if is_active {
+                                                Color32::from_rgb(138, 180, 248)
+                                            } else {
+                                                Color32::from_rgb(232, 234, 237)
+                                            }),
+                                    );
+                                    if ui.add_sized([230.0, 34.0], btn).clicked() {
+                                        requested_surface = surf;
+                                    }
+                                    ui.add_space(4.0);
                                 }
-                                ui.add_space(8.0);
+                                ui.add_space(28.0);
                                 ui.separator();
-                                ui.add_space(8.0);
-                                if ui
-                                    .selectable_label(
-                                        active_surface == BrowserSurface::Settings,
-                                        t(GuiText::Settings, lang),
-                                    )
-                                    .clicked()
-                                {
-                                    requested_surface = BrowserSurface::Settings;
-                                }
-                                if ui
-                                    .selectable_label(
-                                        active_surface == BrowserSurface::History,
-                                        t(GuiText::History, lang),
-                                    )
-                                    .clicked()
-                                {
-                                    requested_surface = BrowserSurface::History;
-                                }
-                                if ui
-                                    .selectable_label(
-                                        active_surface == BrowserSurface::Bookmarks,
-                                        t(GuiText::Bookmarks, lang),
-                                    )
-                                    .clicked()
-                                {
-                                    requested_surface = BrowserSurface::Bookmarks;
-                                }
-                                if ui
-                                    .selectable_label(
-                                        active_surface == BrowserSurface::Extensions,
-                                        t(GuiText::Extensions, lang),
-                                    )
-                                    .clicked()
-                                {
-                                    requested_surface = BrowserSurface::Extensions;
-                                }
-                                ui.add_space(24.0);
+                                ui.add_space(10.0);
                                 ui.weak("LibreNav 0.7");
                                 ui.weak("Motoro Servo");
                             });
                             ui.separator();
                             ui.add_space(20.0);
-                            egui::ScrollArea::vertical().show(ui, |ui| match active_surface {
-                                BrowserSurface::Settings => {
-                                    ui.set_max_width(760.0);
-                                    ui.heading(t(GuiText::Settings, lang));
-                                    ui.weak(t(GuiText::PrivacyDesc, lang));
-                                    ui.add_space(18.0);
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    let target_width = ui.available_width().min(920.0);
+                                    ui.set_width(target_width);
+                                    match active_surface {
+                                        BrowserSurface::Settings => {
+                                            ui.heading(t(GuiText::Settings, lang));
+                                            ui.weak(t(GuiText::PrivacyDesc, lang));
+                                            ui.add_space(18.0);
 
-                                    ui.group(|ui| {
-                                        ui.heading(t(GuiText::Language, lang));
-                                        ui.label("Elektu vian lingvon / Choisissez votre langue :");
-                                        ui.horizontal(|ui| {
-                                            for (code, label) in [
-                                                ("eo", "Esperanto"),
-                                                ("fr", "Français"),
-                                                ("en", "English"),
-                                                ("es", "Español"),
-                                            ] {
-                                                let is_active = settings.language == code;
-                                                if ui.selectable_label(is_active, label).clicked() {
-                                                    settings.language = code.into();
-                                                    settings_changed = true;
-                                                    if let Some(wv) = window.active_webview()
-                                                        && let Some(u) = wv.url()
-                                                        && u.scheme() == "servo"
-                                                        && u.path() == "newtab"
-                                                    {
-                                                        let newtab_url = Url::parse(&format!("servo:newtab?lang={code}")).unwrap();
-                                                        wv.load(newtab_url);
+                                            ui.group(|ui| {
+                                                ui.heading(t(GuiText::Language, lang));
+                                                ui.label("Elektu vian lingvon / Choisissez votre langue :");
+                                                ui.horizontal(|ui| {
+                                                    for (code, label) in [
+                                                        ("eo", "Esperanto"),
+                                                        ("fr", "Français"),
+                                                        ("en", "English"),
+                                                        ("es", "Español"),
+                                                    ] {
+                                                        let is_active = settings.language == code;
+                                                        if ui.selectable_label(is_active, label).clicked() {
+                                                            settings.language = code.into();
+                                                            settings_changed = true;
+                                                            if let Some(wv) = window.active_webview()
+                                                                && let Some(u) = wv.url()
+                                                                && u.scheme() == "servo"
+                                                                && u.path() == "newtab"
+                                                            {
+                                                                let newtab_url = Url::parse(&format!("servo:newtab?lang={code}")).unwrap();
+                                                                wv.load(newtab_url);
+                                                            }
+                                                        }
                                                     }
-                                                }
-                                            }
-                                        });
-                                    });
-                                    ui.add_space(12.0);
+                                                });
+                                            });
+                                            ui.add_space(12.0);
 
-                                    ui.group(|ui| {
-                                        ui.heading(t(GuiText::Appearance, lang));
-                                        settings_changed |= ui
-                                            .checkbox(
-                                                &mut settings.show_home_button,
-                                                t(GuiText::ShowHomeButton, lang),
-                                            )
-                                            .changed();
-                                        settings_changed |= ui
-                                            .checkbox(
-                                                &mut settings.show_bookmarks_bar,
-                                                t(GuiText::ShowBookmarksBar, lang),
-                                            )
-                                            .changed();
-                                    });
-                                    ui.add_space(12.0);
-                                    ui.group(|ui| {
-                                        ui.heading(t(GuiText::Homepage, lang));
-                                        ui.label(t(GuiText::HomepageDesc, lang));
-                                        settings_changed |= ui
-                                            .add(
-                                                egui::TextEdit::singleline(&mut settings.homepage)
-                                                    .desired_width(f32::INFINITY),
-                                            )
-                                            .changed();
-                                        if !settings.homepage_is_valid() {
-                                            ui.colored_label(
-                                                Color32::from_rgb(242, 139, 130),
-                                                t(GuiText::InvalidHomepage, lang),
-                                            );
-                                        }
-                                    });
-                                    ui.add_space(12.0);
-                                    ui.group(|ui| {
-                                        ui.heading(t(GuiText::SearchEngine, lang));
-                                        ui.label(t(GuiText::SearchEngineDesc, lang));
-                                        settings_changed |= ui
-                                            .add(
-                                                egui::TextEdit::singleline(&mut settings.searchpage)
-                                                    .desired_width(f32::INFINITY),
-                                            )
-                                            .changed();
-                                        if !settings.searchpage_is_valid() {
-                                            ui.colored_label(
-                                                Color32::from_rgb(242, 139, 130),
-                                                t(GuiText::InvalidSearchpage, lang),
-                                            );
-                                        }
-                                    });
-                                    ui.add_space(12.0);
-                                    ui.group(|ui| {
-                                        ui.heading(t(GuiText::Privacy, lang));
-                                        ui.label(t(GuiText::PrivacyDesc, lang));
-                                    });
-                                    ui.add_space(12.0);
-                                    ui.group(|ui| {
-                                        ui.heading(t(GuiText::ExtensionsTitle, lang));
-                                        ui.label(t(GuiText::ExtensionsSubtitle, lang));
-                                        if ui.button(t(GuiText::Extensions, lang)).clicked() {
-                                            requested_surface = BrowserSurface::Extensions;
-                                        }
-                                    });
-                                },
-                                BrowserSurface::History => {
-                                    ui.horizontal(|ui| {
-                                        ui.heading(t(GuiText::History, lang));
-                                        if !history.is_empty()
-                                            && ui.button(t(GuiText::ClearHistory, lang)).clicked()
-                                        {
-                                            history.clear();
-                                            history_changed = true;
-                                        }
-                                    });
-                                    ui.separator();
-                                    if history.is_empty() {
-                                        ui.weak(t(GuiText::NoHistory, lang));
-                                    } else {
-                                        for url in history.iter() {
-                                            if ui.link(url).clicked() {
-                                                window.queue_user_interface_command(
-                                                    UserInterfaceCommand::Go(url.clone()),
-                                                );
-                                                close = true;
-                                            }
-                                        }
-                                    }
-                                },
-                                BrowserSurface::Bookmarks => {
-                                    ui.heading(t(GuiText::Bookmarks, lang));
-                                    ui.separator();
-                                    if bookmarks.is_empty() {
-                                        ui.weak(t(GuiText::NoBookmarks, lang));
-                                    } else {
-                                        let mut remove = None;
-                                        let mut entries: Vec<_> =
-                                            bookmarks.iter().cloned().collect();
-                                        entries.sort_unstable();
-                                        for url in entries {
-                                            ui.horizontal(|ui| {
-                                                if ui.link(&url).clicked() {
-                                                    window.queue_user_interface_command(
-                                                        UserInterfaceCommand::Go(url.clone()),
+                                            ui.group(|ui| {
+                                                ui.heading(t(GuiText::Appearance, lang));
+                                                settings_changed |= ui
+                                                    .checkbox(
+                                                        &mut settings.show_home_button,
+                                                        t(GuiText::ShowHomeButton, lang),
+                                                    )
+                                                    .changed();
+                                                settings_changed |= ui
+                                                    .checkbox(
+                                                        &mut settings.show_bookmarks_bar,
+                                                        t(GuiText::ShowBookmarksBar, lang),
+                                                    )
+                                                    .changed();
+                                            });
+                                            ui.add_space(12.0);
+                                            ui.group(|ui| {
+                                                ui.heading(t(GuiText::Homepage, lang));
+                                                ui.label(t(GuiText::HomepageDesc, lang));
+                                                settings_changed |= ui
+                                                    .add(
+                                                        egui::TextEdit::singleline(&mut settings.homepage)
+                                                            .desired_width(f32::INFINITY),
+                                                    )
+                                                    .changed();
+                                                if !settings.homepage_is_valid() {
+                                                    ui.colored_label(
+                                                        Color32::from_rgb(242, 139, 130),
+                                                        t(GuiText::InvalidHomepage, lang),
                                                     );
-                                                    close = true;
-                                                }
-                                                if ui.button(t(GuiText::Delete, lang)).clicked() {
-                                                    remove = Some(url);
                                                 }
                                             });
-                                        }
-                                        if let Some(url) = remove {
-                                            bookmarks.remove(&url);
-                                            bookmarks_changed = true;
-                                        }
-                                    }
-                                },
-                                BrowserSurface::Extensions => {
-                                    ui.set_max_width(760.0);
-                                    ui.heading(t(GuiText::ExtensionsTitle, lang));
-                                    ui.weak(t(GuiText::ExtensionsSubtitle, lang));
-                                    ui.add_space(14.0);
-
-                                    let ext_dir = extensions_directory_path();
-                                    ui.group(|ui| {
-                                        ui.heading(t(GuiText::OpenExtensionsDir, lang));
-                                        if let Some(ref path) = ext_dir {
-                                            ui.label(format!("{}: {}", t(GuiText::ExtensionsTitle, lang), path.display()));
-                                            if ui.button(format!("• {}", t(GuiText::OpenExtensionsDir, lang))).clicked() {
-                                                #[cfg(target_os = "linux")]
-                                                let _ = std::process::Command::new("xdg-open").arg(path).spawn();
-                                            }
-                                        } else {
-                                            ui.weak("Folder not found.");
-                                        }
-                                    });
-
-                                    ui.add_space(12.0);
-                                    ui.group(|ui| {
-                                        ui.heading("Store & Catalogues");
-                                        ui.horizontal(|ui| {
-                                            if ui.button(format!("• {}", t(GuiText::OpenChromeStore, lang))).clicked() {
-                                                window.queue_user_interface_command(UserInterfaceCommand::Go(
-                                                    "https://chromewebstore.google.com/".into(),
-                                                ));
-                                                close = true;
-                                            }
-                                            if ui.button(format!("• {}", t(GuiText::OpenFirefoxAddons, lang))).clicked() {
-                                                window.queue_user_interface_command(UserInterfaceCommand::Go(
-                                                    "https://addons.mozilla.org/".into(),
-                                                ));
-                                                close = true;
-                                            }
-                                            if ui.button(format!("• {}", t(GuiText::OpenGreasyFork, lang))).clicked() {
-                                                window.queue_user_interface_command(UserInterfaceCommand::Go(
-                                                    "https://greasyfork.org/".into(),
-                                                ));
-                                                close = true;
-                                            }
-                                        });
-                                    });
-
-                                    ui.add_space(14.0);
-                                    let installed = list_installed_extensions();
-                                    ui.heading(format!("{} ({})", t(GuiText::InstalledExtensionsCount, lang), installed.len()));
-                                    ui.separator();
-
-                                    if installed.is_empty() {
-                                        ui.weak("Neniu etendaĵo trovita.");
-                                    } else {
-                                        for ext in installed {
+                                            ui.add_space(12.0);
                                             ui.group(|ui| {
-                                                ui.horizontal(|ui| {
-                                                    let badge = if ext.is_dir {
-                                                        t(GuiText::WebExtensionBadge, lang)
-                                                    } else {
-                                                        t(GuiText::UserscriptBadge, lang)
-                                                    };
-                                                    ui.strong(&ext.name);
-                                                    ui.weak(badge);
-                                                    if let Some(ref ver) = ext.version {
-                                                        ui.weak(format!("v{ver}"));
+                                                ui.heading(t(GuiText::SearchEngine, lang));
+                                                ui.label(t(GuiText::SearchEngineDesc, lang));
+                                                settings_changed |= ui
+                                                    .add(
+                                                        egui::TextEdit::singleline(&mut settings.searchpage)
+                                                            .desired_width(f32::INFINITY),
+                                                    )
+                                                    .changed();
+                                                if !settings.searchpage_is_valid() {
+                                                    ui.colored_label(
+                                                        Color32::from_rgb(242, 139, 130),
+                                                        t(GuiText::InvalidSearchpage, lang),
+                                                    );
+                                                }
+                                            });
+                                            ui.add_space(12.0);
+                                            ui.group(|ui| {
+                                                ui.heading(t(GuiText::Privacy, lang));
+                                                ui.label(t(GuiText::PrivacyDesc, lang));
+                                            });
+                                            ui.add_space(12.0);
+                                            ui.group(|ui| {
+                                                ui.heading(t(GuiText::ExtensionsTitle, lang));
+                                                ui.label(t(GuiText::ExtensionsSubtitle, lang));
+                                                if ui.button(t(GuiText::Extensions, lang)).clicked() {
+                                                    requested_surface = BrowserSurface::Extensions;
+                                                }
+                                            });
+                                        },
+                                        BrowserSurface::History => {
+                                            ui.horizontal(|ui| {
+                                                ui.heading(t(GuiText::History, lang));
+                                                if !history.is_empty()
+                                                    && ui.button(t(GuiText::ClearHistory, lang)).clicked()
+                                                {
+                                                    history.clear();
+                                                    history_changed = true;
+                                                }
+                                            });
+                                            ui.separator();
+                                            if history.is_empty() {
+                                                ui.weak(t(GuiText::NoHistory, lang));
+                                            } else {
+                                                for url in history.iter() {
+                                                    if ui.link(url).clicked() {
+                                                        window.queue_user_interface_command(
+                                                            UserInterfaceCommand::Go(url.clone()),
+                                                        );
+                                                        close = true;
                                                     }
+                                                }
+                                            }
+                                        },
+                                        BrowserSurface::Bookmarks => {
+                                            ui.heading(t(GuiText::Bookmarks, lang));
+                                            ui.separator();
+                                            if bookmarks.is_empty() {
+                                                ui.weak(t(GuiText::NoBookmarks, lang));
+                                            } else {
+                                                let mut remove = None;
+                                                let mut entries: Vec<_> =
+                                                    bookmarks.iter().cloned().collect();
+                                                entries.sort_unstable();
+                                                for url in entries {
+                                                    ui.horizontal(|ui| {
+                                                        if ui.link(&url).clicked() {
+                                                            window.queue_user_interface_command(
+                                                                UserInterfaceCommand::Go(url.clone()),
+                                                            );
+                                                            close = true;
+                                                        }
+                                                        if ui.button(t(GuiText::Delete, lang)).clicked() {
+                                                            remove = Some(url);
+                                                        }
+                                                    });
+                                                }
+                                                if let Some(url) = remove {
+                                                    bookmarks.remove(&url);
+                                                    bookmarks_changed = true;
+                                                }
+                                            }
+                                        },
+                                        BrowserSurface::Extensions => {
+                                            ui.heading(t(GuiText::ExtensionsTitle, lang));
+                                            ui.weak(t(GuiText::ExtensionsSubtitle, lang));
+                                            ui.add_space(14.0);
+
+                                            // Installation group
+                                            ui.group(|ui| {
+                                                ui.heading(t(GuiText::InstallExtension, lang));
+                                                ui.add_space(4.0);
+                                                ui.label(t(GuiText::ExtensionInputPlaceholder, lang));
+                                                ui.add(
+                                                    egui::TextEdit::singleline(ext_install_input)
+                                                        .desired_width(f32::INFINITY)
+                                                );
+                                                ui.add_space(8.0);
+                                                ui.horizontal_wrapped(|ui| {
+                                                    if ui.button(format!("• {}", t(GuiText::InstallFromChromeStore, lang))).clicked() {
+                                                        if ext_install_input.trim().is_empty() {
+                                                            *ext_install_status = Some((false, "Veuillez entrer un ID ou une URL Chrome.".into()));
+                                                        } else {
+                                                            match install_chrome_extension(ext_install_input.trim()) {
+                                                                Ok(msg) => {
+                                                                    *ext_install_status = Some((true, msg));
+                                                                    ext_install_input.clear();
+                                                                }
+                                                                Err(e) => {
+                                                                    *ext_install_status = Some((false, e));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    if ui.button(format!("• {}", t(GuiText::InstallFromFirefoxAddons, lang))).clicked() {
+                                                        if ext_install_input.trim().is_empty() {
+                                                            *ext_install_status = Some((false, "Veuillez entrer un identifiant ou une URL Firefox.".into()));
+                                                        } else {
+                                                            match install_firefox_extension(ext_install_input.trim()) {
+                                                                Ok(msg) => {
+                                                                    *ext_install_status = Some((true, msg));
+                                                                    ext_install_input.clear();
+                                                                }
+                                                                Err(e) => {
+                                                                    *ext_install_status = Some((false, e));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    if ui.button(format!("• {}", t(GuiText::InstallLocalFile, lang))).clicked() {
+                                                        if ext_install_input.trim().is_empty() {
+                                                            *ext_install_status = Some((false, "Veuillez spécifier le chemin local du fichier.".into()));
+                                                        } else {
+                                                            match install_local_extension(ext_install_input.trim()) {
+                                                                Ok(msg) => {
+                                                                    *ext_install_status = Some((true, msg));
+                                                                    ext_install_input.clear();
+                                                                }
+                                                                Err(e) => {
+                                                                    *ext_install_status = Some((false, e));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                });
+
+                                                if let Some((success, msg)) = ext_install_status.as_ref() {
+                                                    ui.add_space(6.0);
+                                                    if *success {
+                                                        ui.colored_label(Color32::from_rgb(52, 168, 83), format!("✓ {msg}"));
+                                                    } else {
+                                                        ui.colored_label(Color32::from_rgb(234, 67, 53), format!("✕ {msg}"));
+                                                    }
+                                                }
+                                            });
+
+                                            ui.add_space(14.0);
+
+                                            // Popular 1-Click Extensions
+                                            let installed = list_installed_extensions();
+                                            let has_darkreader = installed.iter().any(|e| {
+                                                e.name.to_lowercase().contains("dark reader")
+                                                    || e.path.to_string_lossy().contains("eimadpbcbfnmbkopoojfekhnkhdbieeh")
+                                            });
+                                            let has_bitwarden = installed.iter().any(|e| {
+                                                e.name.to_lowercase().contains("bitwarden")
+                                                    || e.path.to_string_lossy().contains("nngceckbapebfimnlniiiahkandclblb")
+                                            });
+                                            let has_violentmonkey = installed.iter().any(|e| {
+                                                e.name.to_lowercase().contains("violentmonkey")
+                                                    || e.path.to_string_lossy().contains("jinjaccalgkegednnccohejagnlnfdag")
+                                            });
+
+                                            ui.group(|ui| {
+                                                ui.heading(t(GuiText::PopularExtensions, lang));
+                                                ui.add_space(4.0);
+
+                                                // uBlock Origin (Built-in)
+                                                ui.horizontal(|ui| {
+                                                    ui.strong("uBlock Origin");
+                                                    ui.weak("v1.75.0 (Officiel)");
+                                                    ui.colored_label(Color32::from_rgb(52, 168, 83), "✓ Intégré");
                                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                        ui.colored_label(Color32::from_rgb(52, 168, 83), t(GuiText::ActiveStatus, lang));
+                                                        if ui.button("• Tableau de bord").clicked() {
+                                                            window.queue_user_interface_command(UserInterfaceCommand::Go("servo:ublock-dashboard".into()));
+                                                            close = true;
+                                                        }
+                                                        if ui.button(format!("• {}", t(GuiText::UblockOpenPopup, lang))).clicked() {
+                                                            window.queue_user_interface_command(UserInterfaceCommand::Go("servo:ublock".into()));
+                                                            close = true;
+                                                        }
                                                     });
                                                 });
-                                                if let Some(ref desc) = ext.description {
-                                                    ui.label(desc);
-                                                }
-                                                ui.weak(format!("Path: {}", ext.path.display()));
+                                                ui.separator();
+
+                                                // Dark Reader
+                                                ui.horizontal(|ui| {
+                                                    ui.strong("Dark Reader");
+                                                    ui.label("Mode sombre élégant pour tous les sites web");
+                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                        if has_darkreader {
+                                                            ui.colored_label(Color32::from_rgb(52, 168, 83), format!("✓ {}", t(GuiText::InstalledBadge, lang)));
+                                                        } else if ui.button("+ Installer (Chrome CRX)").clicked() {
+                                                            match install_chrome_extension("eimadpbcbfnmbkopoojfekhnkhdbieeh") {
+                                                                Ok(msg) => *ext_install_status = Some((true, msg)),
+                                                                Err(e) => *ext_install_status = Some((false, e)),
+                                                            }
+                                                        }
+                                                    });
+                                                });
+                                                ui.separator();
+
+                                                // Bitwarden
+                                                ui.horizontal(|ui| {
+                                                    ui.strong("Bitwarden");
+                                                    ui.label("Gestionnaire de mots de passe");
+                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                        if has_bitwarden {
+                                                            ui.colored_label(Color32::from_rgb(52, 168, 83), format!("✓ {}", t(GuiText::InstalledBadge, lang)));
+                                                        } else if ui.button("+ Installer (Chrome CRX)").clicked() {
+                                                            match install_chrome_extension("nngceckbapebfimnlniiiahkandclblb") {
+                                                                Ok(msg) => *ext_install_status = Some((true, msg)),
+                                                                Err(e) => *ext_install_status = Some((false, e)),
+                                                            }
+                                                        }
+                                                    });
+                                                });
+                                                ui.separator();
+
+                                                // Violentmonkey
+                                                ui.horizontal(|ui| {
+                                                    ui.strong("Violentmonkey");
+                                                    ui.label("Gestionnaire de scripts utilisateur");
+                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                        if has_violentmonkey {
+                                                            ui.colored_label(Color32::from_rgb(52, 168, 83), format!("✓ {}", t(GuiText::InstalledBadge, lang)));
+                                                        } else if ui.button("+ Installer (Firefox XPI)").clicked() {
+                                                            match install_firefox_extension("violentmonkey") {
+                                                                Ok(msg) => *ext_install_status = Some((true, msg)),
+                                                                Err(e) => *ext_install_status = Some((false, e)),
+                                                            }
+                                                        }
+                                                    });
+                                                });
                                             });
+
+                                            ui.add_space(14.0);
+
+                                            // Catalogs & Directory
+                                            ui.group(|ui| {
+                                                ui.heading("Catalogues & Répertoires");
+                                                ui.horizontal(|ui| {
+                                                    if ui.button(format!("• {}", t(GuiText::OpenChromeStore, lang))).clicked() {
+                                                        window.queue_user_interface_command(UserInterfaceCommand::Go(
+                                                            "https://chromewebstore.google.com/".into(),
+                                                        ));
+                                                        close = true;
+                                                    }
+                                                    if ui.button(format!("• {}", t(GuiText::OpenFirefoxAddons, lang))).clicked() {
+                                                        window.queue_user_interface_command(UserInterfaceCommand::Go(
+                                                            "https://addons.mozilla.org/".into(),
+                                                        ));
+                                                        close = true;
+                                                    }
+                                                    if ui.button(format!("• {}", t(GuiText::OpenGreasyFork, lang))).clicked() {
+                                                        window.queue_user_interface_command(UserInterfaceCommand::Go(
+                                                            "https://greasyfork.org/".into(),
+                                                        ));
+                                                        close = true;
+                                                    }
+                                                    if let Some(dir) = extensions_directory_path() {
+                                                        if ui.button(format!("• {}", t(GuiText::OpenExtensionsDir, lang))).clicked() {
+                                                            #[cfg(target_os = "linux")]
+                                                            let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
+                                                        }
+                                                    }
+                                                });
+                                            });
+
+                                            ui.add_space(14.0);
+
+                                            // Installed Extensions List
+                                            ui.heading(format!("{} ({})", t(GuiText::InstalledExtensionsCount, lang), installed.len()));
+                                            ui.separator();
                                             ui.add_space(6.0);
-                                        }
+
+                                            if installed.is_empty() {
+                                                ui.weak(t(GuiText::NoExtensions, lang));
+                                            } else {
+                                                let mut ext_to_delete = None;
+                                                for ext in installed {
+                                                    ui.group(|ui| {
+                                                        ui.horizontal(|ui| {
+                                                            let badge = if ext.is_dir {
+                                                                t(GuiText::WebExtensionBadge, lang)
+                                                            } else {
+                                                                t(GuiText::UserscriptBadge, lang)
+                                                            };
+                                                            ui.strong(&ext.name);
+                                                            ui.weak(badge);
+                                                            if let Some(ref ver) = ext.version {
+                                                                ui.weak(format!("v{ver}"));
+                                                            }
+                                                            ui.colored_label(Color32::from_rgb(52, 168, 83), t(GuiText::ActiveStatus, lang));
+
+                                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                                if ui.button(egui::RichText::new("✕ Supprimer").color(Color32::from_rgb(234, 67, 53))).clicked() {
+                                                                    ext_to_delete = Some(ext.path.clone());
+                                                                }
+                                                            });
+                                                        });
+                                                        if let Some(ref desc) = ext.description {
+                                                            ui.label(desc);
+                                                        }
+                                                        ui.weak(format!("Dossier: {}", ext.path.display()));
+                                                    });
+                                                    ui.add_space(6.0);
+                                                }
+                                                if let Some(path) = ext_to_delete {
+                                                    match delete_extension(&path) {
+                                                        Ok(_) => {
+                                                            *ext_install_status = Some((true, "Extension supprimée avec succès.".into()));
+                                                        }
+                                                        Err(e) => {
+                                                            *ext_install_status = Some((false, e));
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        BrowserSurface::None => {},
                                     }
-                                },
-                                BrowserSurface::None => {},
-                            });
+                                });
                         });
                     });
             });
@@ -1666,6 +2117,8 @@ impl Gui {
             history,
             browser_settings,
             browser_surface,
+            ext_install_input,
+            ext_install_status,
             ..
         } = self;
 
@@ -1852,11 +2305,11 @@ impl Gui {
                                         .on_hover_text("uBlock Origin");
 
                                         egui::Popup::menu(&ublock_button).show(|ui| {
-                                            ui.set_min_width(280.0);
+                                            ui.set_min_width(300.0);
                                             ui.vertical(|ui| {
                                                 ui.horizontal(|ui| {
                                                     ui.heading("uBlock Origin");
-                                                    ui.weak("v1.60.0");
+                                                    ui.weak("v1.75.0");
                                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                         if browser_settings.ublock_enabled {
                                                             ui.colored_label(Color32::from_rgb(52, 168, 83), t(GuiText::ActiveStatus, lang));
@@ -1916,54 +2369,36 @@ impl Gui {
                                                     }
                                                 });
 
-                                                ui.add_space(6.0);
+                                                ui.add_space(8.0);
                                                 ui.separator();
-                                                ui.add_space(6.0);
+                                                ui.add_space(8.0);
 
-                                                ui.group(|ui| {
-                                                    ui.horizontal(|ui| {
-                                                        ui.label(t(GuiText::UblockRequestsBlocked, lang));
-                                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                            if is_filtering {
-                                                                ui.strong("12");
-                                                            } else {
-                                                                ui.strong("0");
-                                                            }
-                                                        });
-                                                    });
-                                                    ui.horizontal(|ui| {
-                                                        ui.label(t(GuiText::UblockTotalBlocked, lang));
-                                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                            ui.strong("3 420 (24%)");
-                                                        });
-                                                    });
-                                                });
+                                                ui.label(
+                                                    egui::RichText::new("Interfaces officielles uBlock :")
+                                                        .strong()
+                                                        .size(13.0)
+                                                );
+                                                ui.add_space(4.0);
 
-                                                ui.add_space(6.0);
-                                                ui.horizontal(|ui| {
-                                                    let _ = ui.button("⌖").on_hover_text("Sélecteur d'éléments");
-                                                    let _ = ui.button("⚡").on_hover_text("Mode zappeur d'éléments");
-                                                    let _ = ui.button("⊞").on_hover_text("Bloquer toutes les fenêtres pop-up");
-                                                    let _ = ui.button("🔤").on_hover_text("Bloquer les polices distantes");
-                                                });
-
-                                                ui.add_space(6.0);
-                                                ui.separator();
-                                                ui.add_space(6.0);
-
-                                                if ui.button(format!("⚙ {}", t(GuiText::UblockDashboard, lang))).clicked() {
-                                                    *browser_surface = BrowserSurface::Extensions;
+                                                if ui.button("• Ouvrir le popup natif officiel (HTML/JS)").clicked() {
+                                                    window.queue_user_interface_command(UserInterfaceCommand::Go("servo:ublock".into()));
                                                     ui.close();
                                                 }
+                                                if ui.button("• Tableau de bord & filtres uBlock").clicked() {
+                                                    window.queue_user_interface_command(UserInterfaceCommand::Go("servo:ublock-dashboard".into()));
+                                                    ui.close();
+                                                }
+                                                if ui.button("• Filtres tiers (3p-filters.html)").clicked() {
+                                                    window.queue_user_interface_command(UserInterfaceCommand::Go("resource:///ublock/3p-filters.html".into()));
+                                                    ui.close();
+                                                }
+
+                                                ui.add_space(6.0);
+                                                ui.separator();
+                                                ui.add_space(6.0);
+
                                                 if ui.button(format!("• {}", t(GuiText::ManageExtensions, lang))).clicked() {
                                                     *browser_surface = BrowserSurface::Extensions;
-                                                    ui.close();
-                                                }
-                                                if ui.button(format!("• {}", t(GuiText::OpenExtensionsDir, lang))).clicked() {
-                                                    if let Some(dir) = extensions_directory_path() {
-                                                        #[cfg(target_os = "linux")]
-                                                        let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
-                                                    }
                                                     ui.close();
                                                 }
                                             });
@@ -2374,6 +2809,8 @@ impl Gui {
                 browser_settings,
                 history,
                 bookmarked_urls,
+                ext_install_input,
+                ext_install_status,
                 window,
             );
 

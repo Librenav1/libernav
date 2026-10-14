@@ -89,6 +89,10 @@ impl ResourceProtocolHandler {
 }
 
 impl ProtocolHandler for ResourceProtocolHandler {
+    fn is_fetchable(&self) -> bool {
+        true
+    }
+
     fn load(
         &self,
         request: &mut Request,
