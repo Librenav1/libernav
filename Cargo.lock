@@ -5770,6 +5770,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-derive"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4e98dc3b890f6c23a0f9d3d491a2823d0dea0fa656302a13dd225fa924112a8"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.4",
+]
+
+[[package]]
 name = "num-integer"
 version = "0.1.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7294,7 +7305,7 @@ dependencies = [
  "maybe-rayon",
  "new_debug_unreachable",
  "noop_proc_macro",
- "num-derive",
+ "num-derive 0.4.2",
  "num-traits",
  "paste",
  "profiling",
@@ -8623,7 +8634,7 @@ dependencies = [
  "log",
  "malloc_size_of_derive",
  "memmap2",
- "num-derive",
+ "num-derive 0.5.1",
  "num-traits",
  "parking_lot",
  "read-fonts 0.43.3",
@@ -8694,7 +8705,7 @@ dependencies = [
  "kurbo",
  "log",
  "malloc_size_of_derive",
- "num-derive",
+ "num-derive 0.5.1",
  "num-traits",
  "once_cell",
  "parking_lot",
@@ -10332,7 +10343,7 @@ dependencies = [
  "malloc_size_of_derive",
  "mime",
  "new_debug_unreachable",
- "num-derive",
+ "num-derive 0.4.2",
  "num-integer",
  "num-traits",
  "num_cpus",
