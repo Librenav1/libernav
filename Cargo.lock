@@ -8363,7 +8363,7 @@ version = "0.7.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.4",
  "synstructure 0.14.0",
 ]
 
@@ -8462,7 +8462,7 @@ name = "servo-deny-public-fields"
 version = "0.7.0"
 dependencies = [
  "proc-macro2",
- "syn 2.0.119",
+ "syn 3.0.4",
  "synstructure 0.14.0",
 ]
 
@@ -8519,7 +8519,7 @@ dependencies = [
  "prettyplease",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -8672,7 +8672,7 @@ name = "servo-jstraceable-derive"
 version = "0.7.0"
 dependencies = [
  "proc-macro2",
- "syn 2.0.119",
+ "syn 3.0.4",
  "synstructure 0.14.0",
 ]
 
@@ -8868,7 +8868,7 @@ version = "0.7.0"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.4",
 ]
 
 [[package]]
@@ -9641,7 +9641,7 @@ dependencies = [
  "prettyplease",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.4",
 ]
 
 [[package]]
