@@ -249,7 +249,7 @@ surfman = "0.14.0"
 svgtypes = "0.16"
 swapper = "0.1"
 syn = { version = "2", default-features = false, features = ["clone-impls", "derive", "parsing"] }
-synstructure = "0.13"
+synstructure = "0.14"
 sys-locale = "0.3"
 taffy = { version = "0.14.0", default-features = false, features = ["calc", "detailed_layout_info", "grid", "std"] }
 tempfile = "3"
