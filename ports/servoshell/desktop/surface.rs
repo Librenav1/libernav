@@ -227,52 +227,54 @@ fn render_sidebar(
         .corner_radius(CornerRadius::same(10))
         .inner_margin(egui::Margin::same(10))
         .show(ui, |ui| {
-            ui.set_width(220.0);
-            let items = [
-                (BrowserSurface::Settings, t(GuiText::Settings, lang)),
-                (BrowserSurface::Extensions, t(GuiText::Extensions, lang)),
-                (BrowserSurface::History, t(GuiText::History, lang)),
-                (BrowserSurface::Bookmarks, t(GuiText::Bookmarks, lang)),
-            ];
-            for (surf, label) in items {
-                let is_active = active_surface == surf;
-                let fill = if is_active {
-                    palette.accent_soft
-                } else {
-                    Color32::TRANSPARENT
-                };
-                let stroke = if is_active {
-                    Stroke::new(1.0_f32, palette.accent)
-                } else {
-                    Stroke::NONE
-                };
-                let text_color = if is_active {
-                    palette.accent
-                } else {
-                    palette.text_primary
-                };
-                let btn = egui::Button::new(
-                    egui::RichText::new(format!("  {label}"))
-                        .size(14.0)
-                        .color(text_color)
-                        .strong(),
-                )
-                .fill(fill)
-                .stroke(stroke)
-                .corner_radius(CornerRadius::same(8));
-                if ui.add_sized([216.0, 36.0], btn).clicked() {
-                    *requested_surface = surf;
+            ui.vertical(|ui| {
+                ui.set_width(210.0);
+                let items = [
+                    (BrowserSurface::Settings, t(GuiText::Settings, lang)),
+                    (BrowserSurface::Extensions, t(GuiText::Extensions, lang)),
+                    (BrowserSurface::History, t(GuiText::History, lang)),
+                    (BrowserSurface::Bookmarks, t(GuiText::Bookmarks, lang)),
+                ];
+                for (surf, label) in items {
+                    let is_active = active_surface == surf;
+                    let fill = if is_active {
+                        palette.accent_soft
+                    } else {
+                        Color32::TRANSPARENT
+                    };
+                    let stroke = if is_active {
+                        Stroke::new(1.0_f32, palette.accent)
+                    } else {
+                        Stroke::NONE
+                    };
+                    let text_color = if is_active {
+                        palette.accent
+                    } else {
+                        palette.text_primary
+                    };
+                    let btn = egui::Button::new(
+                        egui::RichText::new(format!("  {label}"))
+                            .size(14.0)
+                            .color(text_color)
+                            .strong(),
+                    )
+                    .fill(fill)
+                    .stroke(stroke)
+                    .corner_radius(CornerRadius::same(8));
+                    if ui.add_sized([206.0, 36.0], btn).clicked() {
+                        *requested_surface = surf;
+                    }
+                    ui.add_space(4.0);
                 }
-                ui.add_space(4.0);
-            }
-            ui.add_space(16.0);
-            ui.separator();
-            ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new("LibreNav 0.7  •  Servo")
-                    .size(12.0)
-                    .color(palette.text_secondary),
-            );
+                ui.add_space(16.0);
+                ui.separator();
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new("LibreNav 0.7  •  Servo")
+                        .size(12.0)
+                        .color(palette.text_secondary),
+                );
+            });
         });
 }
 
