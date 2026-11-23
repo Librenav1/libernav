@@ -358,6 +358,9 @@
 
     self.chrome = webextApi;
     self.browser = webextApi;
+    if (typeof self.vAPI !== 'object' || self.vAPI === null) {
+        self.vAPI = { uBO: true };
+    }
 
     // Safety fallback: if body stays loading after 300ms, force display
     document.addEventListener('DOMContentLoaded', () => {

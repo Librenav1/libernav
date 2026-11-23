@@ -509,13 +509,13 @@ fn render_extensions(
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui_secondary_button(ui, palette, "Dashboard") {
                     window.queue_user_interface_command(UserInterfaceCommand::Go(
-                        "servo:ublock-dashboard".into(),
+                        "resource:///ublock/dashboard.html".into(),
                     ));
                     *close = true;
                 }
                 if ui_primary_button(ui, palette, t(GuiText::UblockOpenPopup, lang)) {
                     window.queue_user_interface_command(UserInterfaceCommand::Go(
-                        "servo:ublock".into(),
+                        "resource:///ublock/popup-fenix.html".into(),
                     ));
                     *close = true;
                 }

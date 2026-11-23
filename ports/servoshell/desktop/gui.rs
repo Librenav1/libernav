@@ -977,8 +977,8 @@ impl Gui {
                                                 ui.add_space(4.0);
 
                                                 for (label, target_url) in [
-                                                    ("Popup officiel uBlock Origin", "servo:ublock"),
-                                                    ("Tableau de bord & filtres uBlock", "servo:ublock-dashboard"),
+                                                    ("Popup officiel uBlock Origin", "resource:///ublock/popup-fenix.html"),
+                                                    ("Tableau de bord & filtres uBlock", "resource:///ublock/dashboard.html"),
                                                     ("Filtres tiers (3p-filters.html)", "resource:///ublock/3p-filters.html"),
                                                 ] {
                                                     let btn = egui::Button::new(
