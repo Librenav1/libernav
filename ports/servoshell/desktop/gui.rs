@@ -540,17 +540,32 @@ impl Gui {
                     painter.add(egui::Shape::line(arc_points, stroke));
                 },
                 ChromeIcon::Extensions => {
-                    // Chromium puzzle piece icon
-                    painter.line_segment([point(-5.0, -5.0), point(-1.5, -5.0)], stroke);
-                    painter.line_segment([point(1.5, -5.0), point(5.0, -5.0)], stroke);
-                    painter.circle_stroke(point(0.0, -5.0), 1.8, stroke);
-
-                    painter.line_segment([point(5.0, -5.0), point(5.0, -1.5)], stroke);
-                    painter.line_segment([point(5.0, 1.5), point(5.0, 5.0)], stroke);
-                    painter.circle_stroke(point(5.0, 0.0), 1.8, stroke);
-
-                    painter.line_segment([point(5.0, 5.0), point(-5.0, 5.0)], stroke);
-                    painter.line_segment([point(-5.0, 5.0), point(-5.0, -5.0)], stroke);
+                    // Smooth vector puzzle-piece silhouette
+                    let mut pts = Vec::new();
+                    // Left edge -> top-left corner
+                    pts.push(point(-5.5, 4.5));
+                    pts.push(point(-5.5, -4.5));
+                    pts.push(point(-1.8, -4.5));
+                    // Top knob arc
+                    for i in 0..=8 {
+                        let angle = std::f32::consts::PI + (i as f32 / 8.0) * std::f32::consts::PI;
+                        pts.push(point(2.0 * angle.cos(), -4.8 + 2.2 * angle.sin()));
+                    }
+                    // Top-right corner
+                    pts.push(point(1.8, -4.5));
+                    pts.push(point(4.5, -4.5));
+                    pts.push(point(4.5, -1.8));
+                    // Right knob arc
+                    for i in 0..=8 {
+                        let angle = -std::f32::consts::FRAC_PI_2
+                            + (i as f32 / 8.0) * std::f32::consts::PI;
+                        pts.push(point(4.8 + 2.2 * angle.cos(), 2.0 * angle.sin()));
+                    }
+                    // Bottom-right corner -> bottom-left corner
+                    pts.push(point(4.5, 1.8));
+                    pts.push(point(4.5, 4.5));
+                    pts.push(point(-5.5, 4.5));
+                    painter.add(egui::Shape::closed_line(pts, stroke));
                 },
                 ChromeIcon::Shield => {
                     let pts = vec![
@@ -975,17 +990,32 @@ impl Gui {
                                         });
 
                                         egui::Popup::menu(&extensions_button).show(|ui| {
-                                            ui.set_min_width(270.0);
+                                            ui.set_min_width(290.0);
                                             ui.vertical(|ui| {
-                                                ui.heading(t(GuiText::Extensions, lang));
-                                                ui.weak(t(GuiText::ExtensionsSubtitle, lang));
-                                                ui.add_space(6.0);
+                                                ui.horizontal(|ui| {
+                                                    ui.label(
+                                                        egui::RichText::new(t(GuiText::Extensions, lang))
+                                                            .size(15.5)
+                                                            .color(palette.text_primary)
+                                                            .strong(),
+                                                    );
+                                                });
+                                                ui.label(
+                                                    egui::RichText::new(t(GuiText::ExtensionsSubtitle, lang))
+                                                        .size(12.0)
+                                                        .color(palette.text_secondary),
+                                                );
+                                                ui.add_space(8.0);
                                                 ui.separator();
-                                                ui.add_space(6.0);
+                                                ui.add_space(8.0);
 
                                                 let installed = list_installed_extensions(lang);
                                                 if installed.is_empty() {
-                                                    ui.weak(t(GuiText::NoExtensions, lang));
+                                                    ui.label(
+                                                        egui::RichText::new(t(GuiText::NoExtensions, lang))
+                                                            .size(12.5)
+                                                            .color(palette.text_secondary),
+                                                    );
                                                 } else {
                                                     for ext in installed {
                                                         ui.horizontal(|ui| {
@@ -996,7 +1026,17 @@ impl Gui {
                                                                     t(GuiText::WebExtensionBadge, lang)
                                                                 },
                                                             };
-                                                            ui.label(format!("• {} [{}]", ext.name, badge));
+                                                            ui.label(
+                                                                egui::RichText::new(&ext.name)
+                                                                    .size(13.0)
+                                                                    .color(palette.text_primary)
+                                                                    .strong(),
+                                                            );
+                                                            ui.label(
+                                                                egui::RichText::new(badge)
+                                                                    .size(11.0)
+                                                                    .color(palette.text_secondary),
+                                                            );
                                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                                 if ext.enabled {
                                                                     ui.colored_label(palette.success, t(GuiText::ActiveStatus, lang));
@@ -1005,6 +1045,7 @@ impl Gui {
                                                                 }
                                                             });
                                                         });
+                                                        ui.add_space(3.0);
                                                     }
                                                 }
 
@@ -1012,17 +1053,37 @@ impl Gui {
                                                 ui.separator();
                                                 ui.add_space(8.0);
 
-                                                if ui.button(format!("• {}", t(GuiText::ManageExtensions, lang))).clicked() {
+                                                let manage_btn = egui::Button::new(
+                                                    egui::RichText::new(t(GuiText::ManageExtensions, lang))
+                                                        .size(13.0)
+                                                        .color(palette.text_on_accent)
+                                                        .strong(),
+                                                )
+                                                .fill(palette.accent)
+                                                .stroke(Stroke::NONE)
+                                                .corner_radius(egui::CornerRadius::same(8));
+                                                if ui.add_sized([ui.available_width(), 32.0], manage_btn).clicked() {
                                                     *browser_surface = BrowserSurface::Extensions;
                                                     ui.close();
                                                 }
-                                                if ui.button(format!("• {}", t(GuiText::OpenChromeStore, lang))).clicked() {
-                                                    window.queue_user_interface_command(UserInterfaceCommand::Go("https://chromewebstore.google.com/".into()));
-                                                    ui.close();
-                                                }
-                                                if ui.button(format!("• {}", t(GuiText::OpenFirefoxAddons, lang))).clicked() {
-                                                    window.queue_user_interface_command(UserInterfaceCommand::Go("https://addons.mozilla.org/".into()));
-                                                    ui.close();
+                                                ui.add_space(6.0);
+                                                for (label, url) in [
+                                                    (t(GuiText::OpenChromeStore, lang), "https://chromewebstore.google.com/"),
+                                                    (t(GuiText::OpenFirefoxAddons, lang), "https://addons.mozilla.org/"),
+                                                ] {
+                                                    let btn = egui::Button::new(
+                                                        egui::RichText::new(label)
+                                                            .size(12.5)
+                                                            .color(palette.text_primary),
+                                                    )
+                                                    .fill(palette.tab_hover_bg)
+                                                    .stroke(Stroke::NONE)
+                                                    .corner_radius(egui::CornerRadius::same(8));
+                                                    if ui.add_sized([ui.available_width(), 28.0], btn).clicked() {
+                                                        window.queue_user_interface_command(UserInterfaceCommand::Go(url.into()));
+                                                        ui.close();
+                                                    }
+                                                    ui.add_space(4.0);
                                                 }
                                             });
                                         });
