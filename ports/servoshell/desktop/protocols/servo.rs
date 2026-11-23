@@ -68,6 +68,25 @@ impl ProtocolHandler for ServoProtocolHandler {
                 &format!("/{path}"),
             );
         }
+        if path.starts_with("css/")
+            || path.starts_with("js/")
+            || path.starts_with("img/")
+            || path.starts_with("lib/")
+            || path.ends_with(".html")
+        {
+            let ublock_rel = format!("/ublock/{path}");
+            let candidate = crate::resources::resource_protocol_dir_path()
+                .join("ublock")
+                .join(path);
+            if candidate.is_file() {
+                return ResourceProtocolHandler::response_for_path(
+                    request,
+                    done_chan,
+                    context,
+                    &ublock_rel,
+                );
+            }
+        }
 
         match path {
             "config" => ResourceProtocolHandler::response_for_path(

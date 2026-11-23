@@ -910,20 +910,31 @@ impl Gui {
                                                     ui.strong(format!("Site : {host_display}"));
                                                     ui.add_space(6.0);
 
-                                                    let (power_color, power_text_color) = if is_filtering {
+                                                    let (power_color, power_icon_color) = if is_filtering {
                                                         (Color32::from_rgb(26, 115, 232), Color32::WHITE)
                                                     } else {
                                                         (Color32::from_rgb(95, 99, 104), Color32::from_rgb(218, 220, 224))
                                                     };
 
-                                                    let power_btn = egui::Button::new(
-                                                        egui::RichText::new("⏻").size(32.0).color(power_text_color)
-                                                    )
-                                                    .min_size(Vec2::splat(56.0))
-                                                    .corner_radius(28.0)
-                                                    .fill(power_color);
+                                                    let (power_rect, power_resp) = ui.allocate_exact_size(Vec2::splat(56.0), Sense::click());
+                                                    let p_center = power_rect.center();
+                                                    ui.painter().circle_filled(p_center, 28.0, power_color);
+                                                    let power_stroke = Stroke::new(2.8_f32, power_icon_color);
+                                                    // Vector power symbol: open arc + vertical stem
+                                                    let arc_pts: Vec<egui::Pos2> = (0..=24)
+                                                        .map(|i| {
+                                                            let a = -std::f32::consts::FRAC_PI_2 + 0.55
+                                                                + (i as f32 / 24.0) * (std::f32::consts::TAU - 1.1);
+                                                            p_center + egui::vec2(12.5 * a.cos(), 12.5 * a.sin())
+                                                        })
+                                                        .collect();
+                                                    ui.painter().add(egui::Shape::line(arc_pts, power_stroke));
+                                                    ui.painter().line_segment(
+                                                        [p_center + egui::vec2(0.0, -14.0), p_center + egui::vec2(0.0, -2.0)],
+                                                        power_stroke,
+                                                    );
 
-                                                    if ui.add(power_btn).clicked() {
+                                                    if power_resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                                         if let Some(ref h) = current_host {
                                                             if is_host_exempt {
                                                                 browser_settings.ublock_disabled_hosts.remove(h);
@@ -965,24 +976,40 @@ impl Gui {
                                                 );
                                                 ui.add_space(4.0);
 
-                                                if ui.button("• Ouvrir le popup natif officiel (HTML/JS)").clicked() {
-                                                    window.queue_user_interface_command(UserInterfaceCommand::Go("servo:ublock".into()));
-                                                    ui.close();
-                                                }
-                                                if ui.button("• Tableau de bord & filtres uBlock").clicked() {
-                                                    window.queue_user_interface_command(UserInterfaceCommand::Go("servo:ublock-dashboard".into()));
-                                                    ui.close();
-                                                }
-                                                if ui.button("• Filtres tiers (3p-filters.html)").clicked() {
-                                                    window.queue_user_interface_command(UserInterfaceCommand::Go("resource:///ublock/3p-filters.html".into()));
-                                                    ui.close();
+                                                for (label, target_url) in [
+                                                    ("Popup officiel uBlock Origin", "servo:ublock"),
+                                                    ("Tableau de bord & filtres uBlock", "servo:ublock-dashboard"),
+                                                    ("Filtres tiers (3p-filters.html)", "resource:///ublock/3p-filters.html"),
+                                                ] {
+                                                    let btn = egui::Button::new(
+                                                        egui::RichText::new(label)
+                                                            .size(12.5)
+                                                            .color(palette.text_primary),
+                                                    )
+                                                    .fill(palette.tab_hover_bg)
+                                                    .stroke(Stroke::NONE)
+                                                    .corner_radius(egui::CornerRadius::same(8));
+                                                    if ui.add_sized([ui.available_width(), 28.0], btn).clicked() {
+                                                        window.queue_user_interface_command(UserInterfaceCommand::Go(target_url.into()));
+                                                        ui.close();
+                                                    }
+                                                    ui.add_space(4.0);
                                                 }
 
-                                                ui.add_space(6.0);
+                                                ui.add_space(4.0);
                                                 ui.separator();
                                                 ui.add_space(6.0);
 
-                                                if ui.button(format!("• {}", t(GuiText::ManageExtensions, lang))).clicked() {
+                                                let manage_btn = egui::Button::new(
+                                                    egui::RichText::new(t(GuiText::ManageExtensions, lang))
+                                                        .size(13.0)
+                                                        .color(palette.text_on_accent)
+                                                        .strong(),
+                                                )
+                                                .fill(palette.accent)
+                                                .stroke(Stroke::NONE)
+                                                .corner_radius(egui::CornerRadius::same(8));
+                                                if ui.add_sized([ui.available_width(), 30.0], manage_btn).clicked() {
                                                     *browser_surface = BrowserSurface::Extensions;
                                                     ui.close();
                                                 }
