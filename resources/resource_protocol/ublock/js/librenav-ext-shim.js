@@ -216,7 +216,13 @@
         matrixIsDirty: false,
         contentLastModified: Date.now(),
         hostnameDict: {
-            'revsearch.revlibertaire.com': { domain: 'revlibertaire.com', counts: [0, 0, 0] }
+            'revsearch.revlibertaire.com': {
+                domain: 'revlibertaire.com',
+                counts: {
+                    allowed: { any: 1, frame: 0, script: 0 },
+                    blocked: { any: 0, frame: 0, script: 0 }
+                }
+            }
         },
         firewallRules: {},
         cnameMap: []
@@ -316,6 +322,12 @@
         runtime: {
             id: 'cjpalhdlnbpafiamejdnhcphjbkeiagm',
             lastError: null,
+            getManifest: () => ({
+                manifest_version: 3,
+                name: 'uBlock Origin',
+                version: '1.75.0'
+            }),
+            getURL: (p) => 'resource:///ublock/' + String(p || '').replace(/^\/+/, ''),
             connect: (details) => virtualPort,
             sendMessage: (msg, callback) => {
                 const res = virtualPort.handleMessage(msg);
