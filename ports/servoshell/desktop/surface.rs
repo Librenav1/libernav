@@ -42,9 +42,9 @@ pub(crate) fn show_browser_surface(
     let mut settings_changed = false;
     let mut history_changed = false;
     let mut bookmarks_changed = false;
-    let content_rect = ctx.content_rect();
     let lang_str = settings.language.clone();
     let lang = lang_str.as_str();
+    let surface_rect = ctx.available_rect();
 
     if ctx.input(|i| i.key_pressed(Key::Escape)) {
         close = true;
@@ -52,17 +52,21 @@ pub(crate) fn show_browser_surface(
 
     egui::Area::new(Id::new("librenav-browser-surface"))
         .order(Order::Foreground)
-        .fixed_pos(content_rect.min)
+        .fixed_pos(surface_rect.min)
         .show(ctx, |ui| {
+            ui.set_min_size(surface_rect.size());
+            ui.set_max_size(surface_rect.size());
             egui::Frame::NONE
                 .fill(palette.surface_bg)
                 .inner_margin(egui::Margin::same(20))
                 .show(ui, |ui| {
-                    ui.set_min_size(content_rect.size() - Vec2::splat(40.0));
+                    let inner_size = surface_rect.size() - Vec2::splat(40.0);
+                    ui.set_min_size(inner_size);
+                    ui.set_max_size(inner_size);
                     render_header(ui, palette, active_surface, lang, &mut close);
-                    ui.add_space(14.0);
+                    ui.add_space(12.0);
                     ui.separator();
-                    ui.add_space(14.0);
+                    ui.add_space(12.0);
 
                     ui.horizontal_top(|ui| {
                         render_sidebar(
@@ -72,13 +76,15 @@ pub(crate) fn show_browser_surface(
                             lang,
                             &mut requested_surface,
                         );
-                        ui.add_space(16.0);
+                        ui.add_space(20.0);
 
-                        egui::ScrollArea::vertical()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                let target_width = ui.available_width().min(900.0);
-                                ui.set_width(target_width);
+                        let content_width = (ui.available_width()).min(880.0).max(320.0);
+                        ui.vertical(|ui| {
+                            ui.set_width(content_width);
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    ui.set_width(content_width - 12.0);
                                 match active_surface {
                                     BrowserSurface::Settings => {
                                         render_settings(
@@ -128,6 +134,7 @@ pub(crate) fn show_browser_surface(
                                     BrowserSurface::None => {},
                                 }
                             });
+                        });
                     });
                 });
         });
@@ -1001,12 +1008,16 @@ fn render_bookmarks(
 }
 
 fn ui_card(ui: &mut egui::Ui, palette: &ThemePalette, add_contents: impl FnOnce(&mut egui::Ui)) {
+    let card_width = ui.available_width();
     egui::Frame::NONE
         .fill(palette.card_bg)
         .stroke(Stroke::new(1.0_f32, palette.card_border))
         .corner_radius(CornerRadius::same(10))
         .inner_margin(egui::Margin::same(16))
-        .show(ui, add_contents);
+        .show(ui, |ui| {
+            ui.set_width((card_width - 32.0).max(200.0));
+            ui.vertical(add_contents);
+        });
 }
 
 fn ui_section_title(ui: &mut egui::Ui, palette: &ThemePalette, title: &str) {
