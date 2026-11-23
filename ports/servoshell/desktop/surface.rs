@@ -171,7 +171,7 @@ fn render_header(
     close: &mut bool,
 ) {
     ui.horizontal(|ui| {
-        if ui_icon_pill(ui, palette, "←", t(GuiText::BackToBrowser, lang)) {
+        if ui_back_button(ui, palette, t(GuiText::BackToBrowser, lang)) {
             *close = true;
         }
         ui.add_space(12.0);
@@ -184,23 +184,23 @@ fn render_header(
         };
         ui.label(
             egui::RichText::new("LibreNav")
-                .size(17.0)
+                .size(16.0)
                 .color(palette.text_secondary),
         );
         ui.label(
             egui::RichText::new("›")
-                .size(17.0)
+                .size(16.0)
                 .color(palette.text_secondary),
         );
         ui.label(
             egui::RichText::new(surface_title)
-                .size(17.0)
+                .size(16.0)
                 .color(palette.text_primary)
                 .strong(),
         );
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui_icon_pill(ui, palette, "✕", t(GuiText::Close, lang)) {
+            if ui_close_button(ui, palette, t(GuiText::Close, lang)) {
                 *close = true;
             }
         });
@@ -973,28 +973,66 @@ fn ui_section_title(ui: &mut egui::Ui, palette: &ThemePalette, title: &str) {
     );
 }
 
-fn ui_icon_pill(ui: &mut egui::Ui, palette: &ThemePalette, glyph: &str, tooltip: &str) -> bool {
-    let (rect, resp) = ui.allocate_exact_size(vec2(34.0, 34.0), Sense::click());
-    let bg = if resp.hovered() {
+fn ui_back_button(ui: &mut egui::Ui, palette: &ThemePalette, tooltip: &str) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(vec2(32.0, 32.0), Sense::click());
+    let bg = if resp.is_pointer_button_down_on() {
+        palette.accent_soft
+    } else if resp.hovered() {
         palette.tab_hover_bg
     } else {
-        palette.card_bg
+        Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, CornerRadius::same(17), bg);
-    ui.painter().rect_stroke(
-        rect,
-        CornerRadius::same(17),
-        Stroke::new(1.0_f32, palette.card_border),
-        egui::StrokeKind::Inside,
-    );
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        glyph,
-        egui::FontId::proportional(15.0),
-        palette.text_primary,
-    );
-    resp.on_hover_text(tooltip).clicked()
+    if bg != Color32::TRANSPARENT {
+        ui.painter().circle_filled(rect.center(), 15.0, bg);
+    }
+    let color = if resp.hovered() {
+        palette.accent
+    } else {
+        palette.text_primary
+    };
+    let c = rect.center();
+    let stroke = Stroke::new(1.8_f32, color);
+    // Clean vector arrow: horizontal shaft + chevron tip
+    ui.painter()
+        .line_segment([pos2(c.x - 6.0, c.y), pos2(c.x + 6.0, c.y)], stroke);
+    ui.painter()
+        .line_segment([pos2(c.x - 1.0, c.y - 5.0), pos2(c.x - 6.0, c.y)], stroke);
+    ui.painter()
+        .line_segment([pos2(c.x - 1.0, c.y + 5.0), pos2(c.x - 6.0, c.y)], stroke);
+
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(tooltip)
+        .clicked()
+}
+
+fn ui_close_button(ui: &mut egui::Ui, palette: &ThemePalette, tooltip: &str) -> bool {
+    let (rect, resp) = ui.allocate_exact_size(vec2(32.0, 32.0), Sense::click());
+    let bg = if resp.is_pointer_button_down_on() {
+        Color32::from_rgba_unmultiplied(palette.danger.r(), palette.danger.g(), palette.danger.b(), 45)
+    } else if resp.hovered() {
+        palette.tab_hover_bg
+    } else {
+        Color32::TRANSPARENT
+    };
+    if bg != Color32::TRANSPARENT {
+        ui.painter().circle_filled(rect.center(), 15.0, bg);
+    }
+    let color = if resp.hovered() {
+        palette.text_primary
+    } else {
+        palette.text_secondary
+    };
+    let c = rect.center();
+    let r = 5.0;
+    let stroke = Stroke::new(1.75_f32, color);
+    ui.painter()
+        .line_segment([pos2(c.x - r, c.y - r), pos2(c.x + r, c.y + r)], stroke);
+    ui.painter()
+        .line_segment([pos2(c.x + r, c.y - r), pos2(c.x - r, c.y + r)], stroke);
+
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(tooltip)
+        .clicked()
 }
 
 fn ui_segmented_tab(ui: &mut egui::Ui, palette: &ThemePalette, label: &str, active: bool) -> bool {
