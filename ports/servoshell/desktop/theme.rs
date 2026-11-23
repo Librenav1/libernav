@@ -211,32 +211,32 @@ impl ThemePalette {
         visuals.widgets.noninteractive.weak_bg_fill = self.card_bg;
         visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, self.separator);
         visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, self.text_primary);
-        visuals.widgets.noninteractive.corner_radius = CornerRadius::same(6);
+        visuals.widgets.noninteractive.corner_radius = CornerRadius::same(8);
 
-        visuals.widgets.inactive.bg_fill = self.tab_inactive_bg;
+        visuals.widgets.inactive.bg_fill = self.tab_hover_bg;
         visuals.widgets.inactive.weak_bg_fill = self.tab_hover_bg;
-        visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, self.card_border);
+        visuals.widgets.inactive.bg_stroke = Stroke::NONE;
         visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, self.text_primary);
-        visuals.widgets.inactive.corner_radius = CornerRadius::same(6);
+        visuals.widgets.inactive.corner_radius = CornerRadius::same(8);
 
-        visuals.widgets.hovered.bg_fill = self.tab_hover_bg;
-        visuals.widgets.hovered.weak_bg_fill = self.tab_hover_bg;
-        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, self.accent);
-        visuals.widgets.hovered.fg_stroke = Stroke::new(1.5_f32, self.text_primary);
-        visuals.widgets.hovered.corner_radius = CornerRadius::same(6);
+        visuals.widgets.hovered.bg_fill = blend_color(self.tab_hover_bg, self.text_primary, 0.12);
+        visuals.widgets.hovered.weak_bg_fill = blend_color(self.tab_hover_bg, self.text_primary, 0.12);
+        visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, self.card_border);
+        visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, self.text_primary);
+        visuals.widgets.hovered.corner_radius = CornerRadius::same(8);
 
         visuals.widgets.active.bg_fill = self.accent_soft;
         visuals.widgets.active.weak_bg_fill = self.accent_soft;
-        visuals.widgets.active.bg_stroke = Stroke::new(1.5_f32, self.accent);
-        visuals.widgets.active.fg_stroke = Stroke::new(1.5_f32, self.text_primary);
-        visuals.widgets.active.corner_radius = CornerRadius::same(6);
+        visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, self.accent);
+        visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, self.text_primary);
+        visuals.widgets.active.corner_radius = CornerRadius::same(8);
 
         ctx.set_visuals(visuals);
 
         ctx.global_style_mut(|style| {
-            style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-            style.spacing.button_padding = egui::vec2(10.0, 6.0);
-            style.spacing.interact_size = egui::vec2(36.0, 28.0);
+            style.spacing.item_spacing = egui::vec2(8.0, 8.0);
+            style.spacing.button_padding = egui::vec2(14.0, 8.0);
+            style.spacing.interact_size = egui::vec2(36.0, 30.0);
         });
     }
 }
