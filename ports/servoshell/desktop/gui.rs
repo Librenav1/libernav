@@ -16,7 +16,7 @@ use std::fs;
     target_os = "freebsd",
     target_os = "macos"
 ))]
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -46,7 +46,6 @@ use euclid::{Length, Point2D, Rect, Scale, Size2D};
 ))]
 use log::info;
 use log::warn;
-use serde::{Deserialize, Serialize};
 use servo::{
     DeviceIndependentPixel, DevicePixel, Image, LoadStatus, OffscreenRenderingContext, PixelFormat,
     RenderingContext, WebView, WebViewId,
@@ -57,7 +56,16 @@ use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::Window;
 
 use crate::desktop::event_loop::AppEvent;
+use crate::desktop::extensions::{
+    ExtensionKind, blocked_requests_count, list_installed_extensions, sync_adblock_settings,
+};
 use crate::desktop::headed_window;
+pub(crate) use crate::desktop::settings::BrowserSurface;
+use crate::desktop::settings::{
+    BrowserSettings, GuiText, LIBRENAV_HISTORY_FILE, LIBRENAV_SETTINGS_FILE,
+    load_bookmarks, load_json_profile, save_bookmarks, save_json_profile, t,
+};
+use crate::desktop::theme::ThemePalette;
 use crate::running_app_state::{RunningAppState, UserInterfaceCommand};
 use crate::window::{ServoShellWindow, TopLevelWebViewCreationRequest};
 
@@ -71,385 +79,6 @@ const CHROMIUM_TAB_TOP_RADIUS: u8 = 10;
 const CHROMIUM_TOOLBAR_HEIGHT: f32 = 52.0;
 const CHROMIUM_TOOLBAR_BUTTON_SIZE: f32 = 34.0;
 const CHROMIUM_LOCATION_BAR_HEIGHT: f32 = 34.0;
-const LIBRENAV_PROFILE_DIRECTORY: &str = "librenav";
-const LIBRENAV_BOOKMARKS_FILE: &str = "bookmarks.json";
-const LIBRENAV_HISTORY_FILE: &str = "history.json";
-const LIBRENAV_SETTINGS_FILE: &str = "browser-settings.json";
-const LIBRENAV_EXTENSIONS_DIRECTORY: &str = "extensions";
-
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) enum BrowserSurface {
-    #[default]
-    None,
-    Settings,
-    History,
-    Bookmarks,
-    Extensions,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub(crate) struct BrowserSettings {
-    pub(crate) language: String,
-    pub(crate) show_home_button: bool,
-    pub(crate) show_bookmarks_bar: bool,
-    pub(crate) homepage: String,
-    pub(crate) searchpage: String,
-    pub(crate) ublock_enabled: bool,
-    pub(crate) ublock_disabled_hosts: HashSet<String>,
-}
-
-impl Default for BrowserSettings {
-    fn default() -> Self {
-        Self {
-            language: "fr".into(),
-            show_home_button: true,
-            show_bookmarks_bar: true,
-            homepage: "servo:newtab".into(),
-            searchpage: "https://revsearch.revlibertaire.com/search.php?q=%s".into(),
-            ublock_enabled: true,
-            ublock_disabled_hosts: HashSet::new(),
-        }
-    }
-}
-
-impl BrowserSettings {
-    fn homepage_is_valid(&self) -> bool {
-        Url::parse(&self.homepage).is_ok()
-    }
-
-    fn searchpage_is_valid(&self) -> bool {
-        self.searchpage.contains("%s")
-            && Url::parse(&self.searchpage.replace("%s", "librenav-test")).is_ok()
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum GuiText {
-    Back,
-    Forward,
-    Reload,
-    Stop,
-    Home,
-    SearchPlaceholder,
-    BookmarkAdd,
-    BookmarkRemove,
-    Profile,
-    ProfileTitle,
-    ProfileSubtitle,
-    MainMenu,
-    NewTab,
-    NewWindow,
-    Zoom,
-    History,
-    Bookmarks,
-    Extensions,
-    Settings,
-    ShowBookmarksBar,
-    ExperimentalFeatures,
-    Exit,
-    BackToBrowser,
-    Close,
-    Language,
-    Appearance,
-    ShowHomeButton,
-    Homepage,
-    HomepageDesc,
-    SearchEngine,
-    SearchEngineDesc,
-    Privacy,
-    PrivacyDesc,
-    ClearHistory,
-    NoHistory,
-    NoBookmarks,
-    Delete,
-    ExtensionsTitle,
-    ExtensionsSubtitle,
-    OpenExtensionsDir,
-    OpenChromeStore,
-    OpenFirefoxAddons,
-    OpenGreasyFork,
-    InstalledExtensionsCount,
-    ActiveStatus,
-    BookmarksBarEmpty,
-    InvalidHomepage,
-    InvalidSearchpage,
-    WebExtensionBadge,
-    UserscriptBadge,
-    ManageExtensions,
-    NoExtensions,
-    UblockPowerOn,
-    UblockPowerOff,
-    InstallExtension,
-    InstallFromChromeStore,
-    InstallFromFirefoxAddons,
-    InstallLocalFile,
-    ExtensionInputPlaceholder,
-    PopularExtensions,
-    InstalledBadge,
-    UblockOpenPopup,
-}
-
-fn t(text: GuiText, lang: impl AsRef<str>) -> &'static str {
-    match lang.as_ref() {
-        "fr" => match text {
-            GuiText::Back => "Précédent",
-            GuiText::Forward => "Suivant",
-            GuiText::Reload => "Recharger",
-            GuiText::Stop => "Arrêter",
-            GuiText::Home => "Accueil",
-            GuiText::SearchPlaceholder => "Rechercher avec RevSearch ou saisir une adresse",
-            GuiText::BookmarkAdd => "Ajouter aux favoris",
-            GuiText::BookmarkRemove => "Supprimer des favoris",
-            GuiText::Profile => "Profil et personnalisation",
-            GuiText::ProfileTitle => "Profil local LibreNav",
-            GuiText::ProfileSubtitle => "Navigation autonome et émancipée, 100% hors-ligne",
-            GuiText::MainMenu => "Menu principal",
-            GuiText::NewTab => "Nouvel onglet",
-            GuiText::NewWindow => "Nouvelle fenêtre",
-            GuiText::Zoom => "Zoom",
-            GuiText::History => "Historique",
-            GuiText::Bookmarks => "Favoris",
-            GuiText::Extensions => "Extensions",
-            GuiText::Settings => "Paramètres",
-            GuiText::ShowBookmarksBar => "Afficher la barre des favoris",
-            GuiText::ExperimentalFeatures => "Fonctionnalités expérimentales",
-            GuiText::Exit => "Quitter LibreNav",
-            GuiText::BackToBrowser => "← Retour au navigateur",
-            GuiText::Close => "Fermer",
-            GuiText::Language => "Langue",
-            GuiText::Appearance => "Apparence",
-            GuiText::ShowHomeButton => "Afficher le bouton d'accueil",
-            GuiText::Homepage => "Page d'accueil",
-            GuiText::HomepageDesc => "Adresse ouverte par le bouton d'accueil",
-            GuiText::SearchEngine => "Moteur de recherche",
-            GuiText::SearchEngineDesc => "Utilisez %s comme variable pour la requête",
-            GuiText::Privacy => "Confidentialité et autonomie",
-            GuiText::PrivacyDesc => "LibreNav n'ajoute aucune télémétrie ni service tiers propriétaire.",
-            GuiText::ClearHistory => "Effacer l'historique",
-            GuiText::NoHistory => "Aucune page dans l'historique.",
-            GuiText::NoBookmarks => "Aucun favori enregistré.",
-            GuiText::Delete => "Supprimer",
-            GuiText::ExtensionsTitle => "Extensions et modules complémentaires",
-            GuiText::ExtensionsSubtitle => "Gestion des extensions Chrome, Firefox et userscripts (.user.js)",
-            GuiText::OpenExtensionsDir => "Ouvrir le dossier des extensions",
-            GuiText::OpenChromeStore => "Parcourir Chrome Web Store",
-            GuiText::OpenFirefoxAddons => "Parcourir Firefox Add-ons",
-            GuiText::OpenGreasyFork => "Parcourir GreasyFork (scripts)",
-            GuiText::InstalledExtensionsCount => "Extensions installées",
-            GuiText::ActiveStatus => "✓ Actif",
-            GuiText::BookmarksBarEmpty => "Ajoutez des favoris pour les afficher ici",
-            GuiText::InvalidHomepage => "Veuillez saisir une URL valide.",
-            GuiText::InvalidSearchpage => "L'adresse doit être valide et contenir %s.",
-            GuiText::WebExtensionBadge => "[Extension Web]",
-            GuiText::UserscriptBadge => "[Script utilisateur]",
-            GuiText::ManageExtensions => "Gérer les extensions",
-            GuiText::NoExtensions => "Aucune extension installée.",
-            GuiText::UblockPowerOn => "Protection active sur ce site",
-            GuiText::UblockPowerOff => "Protection désactivée sur ce site",
-            GuiText::InstallExtension => "Installer une extension",
-            GuiText::InstallFromChromeStore => "Installer depuis Chrome Web Store",
-            GuiText::InstallFromFirefoxAddons => "Installer depuis Firefox Add-ons",
-            GuiText::InstallLocalFile => "Installer un fichier local (.crx, .xpi, .zip, .user.js)",
-            GuiText::ExtensionInputPlaceholder => "Coller une URL Chrome Web Store, Firefox Add-ons, ou chemin de fichier...",
-            GuiText::PopularExtensions => "Extensions populaires en 1 clic",
-            GuiText::InstalledBadge => "✓ Installé",
-            GuiText::UblockOpenPopup => "Ouvrir le panneau uBlock Origin",
-        },
-        "en" => match text {
-            GuiText::Back => "Back",
-            GuiText::Forward => "Forward",
-            GuiText::Reload => "Reload",
-            GuiText::Stop => "Stop",
-            GuiText::Home => "Home",
-            GuiText::SearchPlaceholder => "Search with RevSearch or enter web address",
-            GuiText::BookmarkAdd => "Bookmark this tab",
-            GuiText::BookmarkRemove => "Remove bookmark",
-            GuiText::Profile => "Profile and customization",
-            GuiText::ProfileTitle => "LibreNav Local Profile",
-            GuiText::ProfileSubtitle => "Autonomous browsing, no account required",
-            GuiText::MainMenu => "Main menu",
-            GuiText::NewTab => "New tab",
-            GuiText::NewWindow => "New window",
-            GuiText::Zoom => "Zoom",
-            GuiText::History => "History",
-            GuiText::Bookmarks => "Bookmarks",
-            GuiText::Extensions => "Extensions",
-            GuiText::Settings => "Settings",
-            GuiText::ShowBookmarksBar => "Show bookmarks bar",
-            GuiText::ExperimentalFeatures => "Experimental features",
-            GuiText::Exit => "Exit LibreNav",
-            GuiText::BackToBrowser => "← Back to browser",
-            GuiText::Close => "Close",
-            GuiText::Language => "Language",
-            GuiText::Appearance => "Appearance",
-            GuiText::ShowHomeButton => "Show home button",
-            GuiText::Homepage => "Homepage",
-            GuiText::HomepageDesc => "Address opened by the home button",
-            GuiText::SearchEngine => "Search engine",
-            GuiText::SearchEngineDesc => "Use %s as a placeholder for the query",
-            GuiText::Privacy => "Privacy and autonomy",
-            GuiText::PrivacyDesc => "LibreNav adds no telemetry or proprietary third-party services.",
-            GuiText::ClearHistory => "Clear history",
-            GuiText::NoHistory => "No pages in history.",
-            GuiText::NoBookmarks => "No bookmarks saved.",
-            GuiText::Delete => "Delete",
-            GuiText::ExtensionsTitle => "Extensions & Add-ons",
-            GuiText::ExtensionsSubtitle => "Manage Chrome, Firefox extensions and userscripts (.user.js)",
-            GuiText::OpenExtensionsDir => "Open extensions folder",
-            GuiText::OpenChromeStore => "Browse Chrome Web Store",
-            GuiText::OpenFirefoxAddons => "Browse Firefox Add-ons",
-            GuiText::OpenGreasyFork => "Browse GreasyFork (scripts)",
-            GuiText::InstalledExtensionsCount => "Installed extensions",
-            GuiText::ActiveStatus => "✓ Active",
-            GuiText::BookmarksBarEmpty => "Save bookmarks to display them here",
-            GuiText::InvalidHomepage => "Please enter a valid URL.",
-            GuiText::InvalidSearchpage => "Address must be valid and contain %s.",
-            GuiText::WebExtensionBadge => "[WebExtension]",
-            GuiText::UserscriptBadge => "[Userscript]",
-            GuiText::ManageExtensions => "Manage extensions",
-            GuiText::NoExtensions => "No extensions installed.",
-            GuiText::UblockPowerOn => "Protection enabled on this site",
-            GuiText::UblockPowerOff => "Protection disabled on this site",
-            GuiText::InstallExtension => "Install an extension",
-            GuiText::InstallFromChromeStore => "Install from Chrome Web Store",
-            GuiText::InstallFromFirefoxAddons => "Install from Firefox Add-ons",
-            GuiText::InstallLocalFile => "Install local file (.crx, .xpi, .zip, .user.js)",
-            GuiText::ExtensionInputPlaceholder => "Paste Chrome Web Store URL, Firefox Add-ons URL, or file path...",
-            GuiText::PopularExtensions => "Popular 1-click extensions",
-            GuiText::InstalledBadge => "✓ Installed",
-            GuiText::UblockOpenPopup => "Open uBlock Origin popup",
-        },
-        "es" => match text {
-            GuiText::Back => "Atrás",
-            GuiText::Forward => "Adelante",
-            GuiText::Reload => "Recargar",
-            GuiText::Stop => "Detener",
-            GuiText::Home => "Inicio",
-            GuiText::SearchPlaceholder => "Buscar con RevSearch o introducir dirección web",
-            GuiText::BookmarkAdd => "Añadir a marcadores",
-            GuiText::BookmarkRemove => "Eliminar de marcadores",
-            GuiText::Profile => "Perfil y personalización",
-            GuiText::ProfileTitle => "Perfil local LibreNav",
-            GuiText::ProfileSubtitle => "Navegación autónoma y sin cuenta",
-            GuiText::MainMenu => "Menú principal",
-            GuiText::NewTab => "Nueva pestaña",
-            GuiText::NewWindow => "Nueva ventana",
-            GuiText::Zoom => "Zoom",
-            GuiText::History => "Historial",
-            GuiText::Bookmarks => "Marcadores",
-            GuiText::Extensions => "Extensiones",
-            GuiText::Settings => "Configuración",
-            GuiText::ShowBookmarksBar => "Mostrar barra de marcadores",
-            GuiText::ExperimentalFeatures => "Funciones experimentales",
-            GuiText::Exit => "Salir de LibreNav",
-            GuiText::BackToBrowser => "← Volver al navegador",
-            GuiText::Close => "Cerrar",
-            GuiText::Language => "Idioma",
-            GuiText::Appearance => "Apariencia",
-            GuiText::ShowHomeButton => "Mostrar botón de inicio",
-            GuiText::Homepage => "Página de inicio",
-            GuiText::HomepageDesc => "Dirección abierta por el botón de inicio",
-            GuiText::SearchEngine => "Motor de búsqueda",
-            GuiText::SearchEngineDesc => "Usa %s como variable para la consulta",
-            GuiText::Privacy => "Privacidad y autonomía",
-            GuiText::PrivacyDesc => "LibreNav no añade telemetría ni servicios propietarios.",
-            GuiText::ClearHistory => "Borrar historial",
-            GuiText::NoHistory => "No hay páginas en el historial.",
-            GuiText::NoBookmarks => "No hay marcadores guardados.",
-            GuiText::Delete => "Eliminar",
-            GuiText::ExtensionsTitle => "Extensiones y scripts",
-            GuiText::ExtensionsSubtitle => "Gestionar extensiones de Chrome, Firefox y userscripts",
-            GuiText::OpenExtensionsDir => "Abrir carpeta de extensiones",
-            GuiText::OpenChromeStore => "Explorar Chrome Web Store",
-            GuiText::OpenFirefoxAddons => "Explorar Firefox Add-ons",
-            GuiText::OpenGreasyFork => "Explorar GreasyFork (scripts)",
-            GuiText::InstalledExtensionsCount => "Extensiones instaladas",
-            GuiText::ActiveStatus => "✓ Activo",
-            GuiText::BookmarksBarEmpty => "Añade marcadores para mostrarlos aquí",
-            GuiText::InvalidHomepage => "Introduce una URL válida.",
-            GuiText::InvalidSearchpage => "La dirección debe ser válida y contener %s.",
-            GuiText::WebExtensionBadge => "[Extensión Web]",
-            GuiText::UserscriptBadge => "[Script de usuario]",
-            GuiText::ManageExtensions => "Gestionar extensiones",
-            GuiText::NoExtensions => "No hay extensiones instaladas.",
-            GuiText::UblockPowerOn => "Protección activada en este sitio",
-            GuiText::UblockPowerOff => "Protección desactivada en este sitio",
-            GuiText::InstallExtension => "Instalar una extensión",
-            GuiText::InstallFromChromeStore => "Instalar desde Chrome Web Store",
-            GuiText::InstallFromFirefoxAddons => "Instalar desde Firefox Add-ons",
-            GuiText::InstallLocalFile => "Instalar archivo local (.crx, .xpi, .zip, .user.js)",
-            GuiText::ExtensionInputPlaceholder => "Pegar URL de Chrome Web Store, Firefox Add-ons, o ruta de archivo...",
-            GuiText::PopularExtensions => "Extensiones populares en 1 clic",
-            GuiText::InstalledBadge => "✓ Instalado",
-            GuiText::UblockOpenPopup => "Abrir el panel uBlock Origin",
-        },
-        _ => match text {
-            GuiText::Back => "Reen",
-            GuiText::Forward => "Antaŭen",
-            GuiText::Reload => "Reŝargi",
-            GuiText::Stop => "Haltigi",
-            GuiText::Home => "Hejmpaĝo",
-            GuiText::SearchPlaceholder => "Serĉu per RevSearch aŭ enigu retadreson",
-            GuiText::BookmarkAdd => "Aldoni legosignon",
-            GuiText::BookmarkRemove => "Forigi legosignon",
-            GuiText::Profile => "Profilo kaj personigo",
-            GuiText::ProfileTitle => "Loka profilo LibreNav",
-            GuiText::ProfileSubtitle => "Sendependa retumado, neniu konto bezonata",
-            GuiText::MainMenu => "Ĉefa menuo",
-            GuiText::NewTab => "Nova langeto",
-            GuiText::NewWindow => "Nova fenestro",
-            GuiText::Zoom => "Zomo",
-            GuiText::History => "Historio",
-            GuiText::Bookmarks => "Legosignoj",
-            GuiText::Extensions => "Etendaĵoj",
-            GuiText::Settings => "Agordoj",
-            GuiText::ShowBookmarksBar => "Montri legosignan strion",
-            GuiText::ExperimentalFeatures => "Eksperimentaj funkcioj",
-            GuiText::Exit => "Eliri",
-            GuiText::BackToBrowser => "← Reveni al retumado",
-            GuiText::Close => "Fermi",
-            GuiText::Language => "Lingvo",
-            GuiText::Appearance => "Aspekto",
-            GuiText::ShowHomeButton => "Montri la hejman butonon",
-            GuiText::Homepage => "Hejmpaĝo",
-            GuiText::HomepageDesc => "Adreso malfermita de la hejma butono",
-            GuiText::SearchEngine => "Serĉilo",
-            GuiText::SearchEngineDesc => "Uzu %s kiel lokokupilon por la serĉteksto",
-            GuiText::Privacy => "Privateco",
-            GuiText::PrivacyDesc => "LibreNav ne aldonas telemetrion aŭ kontajn servojn.",
-            GuiText::ClearHistory => "Forviŝi historion",
-            GuiText::NoHistory => "Neniu vizitita paĝo.",
-            GuiText::NoBookmarks => "Neniu konservita legosigno.",
-            GuiText::Delete => "Forigi",
-            GuiText::ExtensionsTitle => "Etendaĵoj (Extensions & Userscripts)",
-            GuiText::ExtensionsSubtitle => "LibreNav subtenas rektan ŝarĝon de uzantskriptoj (.user.js) kaj etendaĵaj dosierujoj.",
-            GuiText::OpenExtensionsDir => "Malfermi dosierujon de etendaĵoj",
-            GuiText::OpenChromeStore => "Foliumi Chrome Web Store",
-            GuiText::OpenFirefoxAddons => "Foliumi Firefox Add-ons",
-            GuiText::OpenGreasyFork => "Foliumi GreasyFork",
-            GuiText::InstalledExtensionsCount => "Instalitaj etendaĵoj",
-            GuiText::ActiveStatus => "✓ Aktiva",
-            GuiText::BookmarksBarEmpty => "Konservu paĝojn por montri ilin en ĉi tiu legosigna strio",
-            GuiText::InvalidHomepage => "Enigu validan absolutan adreson.",
-            GuiText::InvalidSearchpage => "La adreso devas esti valida kaj enhavi %s.",
-            GuiText::WebExtensionBadge => "[WebExtension]",
-            GuiText::UserscriptBadge => "[Userscript]",
-            GuiText::ManageExtensions => "Administri etendaĵojn",
-            GuiText::NoExtensions => "Neniu etendaĵo instalita.",
-            GuiText::UblockPowerOn => "Protekto aktiva en ĉi tiu retejo",
-            GuiText::UblockPowerOff => "Protekto malaktiva en ĉi tiu retejo",
-            GuiText::InstallExtension => "Instali etendaĵon",
-            GuiText::InstallFromChromeStore => "Instali el Chrome Web Store",
-            GuiText::InstallFromFirefoxAddons => "Instali el Firefox Add-ons",
-            GuiText::InstallLocalFile => "Instali lokan dosieron (.crx, .xpi, .zip, .user.js)",
-            GuiText::ExtensionInputPlaceholder => "Algluu retadreson de Chrome Web Store, Firefox Add-ons, aŭ dosiervojon...",
-            GuiText::PopularExtensions => "Popularaj etendaĵoj per 1 klako",
-            GuiText::InstalledBadge => "✓ Instalita",
-            GuiText::UblockOpenPopup => "Malfermi la panelon de uBlock Origin",
-        },
-    }
-}
 
 #[derive(Clone, Copy)]
 enum ChromeIcon {
@@ -527,532 +156,6 @@ fn truncate_with_ellipsis(input: &str, max_length: usize) -> String {
         input.to_string()
     }
 }
-
-#[cfg(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-))]
-fn profile_file_path(file_name: &str) -> Option<PathBuf> {
-    dirs::data_dir().map(|directory| directory.join(LIBRENAV_PROFILE_DIRECTORY).join(file_name))
-}
-
-#[cfg(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-))]
-fn extensions_directory_path() -> Option<PathBuf> {
-    profile_file_path(LIBRENAV_EXTENSIONS_DIRECTORY)
-}
-
-#[cfg(not(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-)))]
-fn extensions_directory_path() -> Option<PathBuf> {
-    None
-}
-
-#[derive(Clone, Debug)]
-struct ExtensionInfo {
-    name: String,
-    version: Option<String>,
-    description: Option<String>,
-    path: PathBuf,
-    is_dir: bool,
-}
-
-fn list_installed_extensions() -> Vec<ExtensionInfo> {
-    let mut list = Vec::new();
-    if let Some(dir) = extensions_directory_path() {
-        if !dir.exists() {
-            let _ = fs::create_dir_all(&dir);
-        }
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
-                let is_dir = path.is_dir();
-                if is_dir {
-                    let manifest_path = path.join("manifest.json");
-                    let mut ext_name = file_name.clone();
-                    let mut ext_version = None;
-                    let mut ext_desc = None;
-                    if manifest_path.is_file()
-                        && let Ok(content) = fs::read_to_string(&manifest_path)
-                        && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
-                    {
-                        if let Some(n) = val.get("name").and_then(|v| v.as_str()) {
-                            ext_name = n.to_string();
-                        }
-                        if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
-                            ext_version = Some(v.to_string());
-                        }
-                        if let Some(d) = val.get("description").and_then(|v| v.as_str()) {
-                            ext_desc = Some(d.to_string());
-                        }
-                    }
-                    list.push(ExtensionInfo {
-                        name: ext_name,
-                        version: ext_version,
-                        description: ext_desc,
-                        path,
-                        is_dir: true,
-                    });
-                } else if file_name.ends_with(".js") || file_name.ends_with(".user.js") {
-                    let mut desc = None;
-                    if let Ok(content) = fs::read_to_string(&path) {
-                        for line in content.lines() {
-                            if line.contains("@description") {
-                                desc = Some(line.split("@description").nth(1).unwrap_or("").trim().to_string());
-                                break;
-                            }
-                        }
-                    }
-                    list.push(ExtensionInfo {
-                        name: file_name,
-                        version: Some("1.0.0".into()),
-                        description: desc,
-                        path,
-                        is_dir: false,
-                    });
-                }
-            }
-        }
-    }
-    list.sort_by(|a, b| a.name.cmp(&b.name));
-    list
-}
-
-fn find_ext_id(input: &str) -> Result<String, String> {
-    let trimmed = input.trim();
-    if let Some(pos) = trimmed.rfind('/') {
-        let candidate = &trimmed[pos + 1..];
-        let candidate = candidate.split('?').next().unwrap_or(candidate);
-        let candidate = candidate.split('#').next().unwrap_or(candidate);
-        if candidate.len() == 32 && candidate.chars().all(|c| ('a'..='p').contains(&c)) {
-            return Ok(candidate.to_string());
-        }
-    }
-    let bytes = trimmed.as_bytes();
-    for window in bytes.windows(32) {
-        if window.iter().all(|&b| (b'a'..=b'p').contains(&b)) {
-            return Ok(String::from_utf8_lossy(window).to_string());
-        }
-    }
-    Err("Identifiant Chrome introuvable (32 lettres de 'a' à 'p' attendues).".into())
-}
-
-fn extract_amo_slug(input: &str) -> Result<String, String> {
-    let trimmed = input.trim();
-    if let Some(pos) = trimmed.find("/addon/") {
-        let after = &trimmed[pos + 7..];
-        let slug = after.trim_matches('/').split('/').next().unwrap_or(after);
-        let slug = slug.split('?').next().unwrap_or(slug);
-        let slug = slug.split('#').next().unwrap_or(slug);
-        if !slug.is_empty() {
-            return Ok(slug.to_string());
-        }
-    }
-    let clean = trimmed.trim_matches('/').split('?').next().unwrap_or(trimmed);
-    let clean = clean.split('#').next().unwrap_or(clean);
-    if !clean.is_empty() && !clean.contains('/') && !clean.contains(' ') {
-        return Ok(clean.to_string());
-    }
-    Err("Identifiant ou URL Firefox Add-ons non reconnu.".into())
-}
-
-fn install_chrome_extension(id_or_url: &str) -> Result<String, String> {
-    let ext_id = find_ext_id(id_or_url)?;
-    let Some(dest_dir) = extensions_directory_path() else {
-        return Err("Dossier des extensions introuvable.".into());
-    };
-    let _ = fs::create_dir_all(&dest_dir);
-
-    let crx_url = format!(
-        "https://clients2.google.com/service/update2/crx?response=redirect&prod=chromecrx&prodchannel=&prodversion=141.0.7390.55&lang=en-US&acceptformat=crx3,puff&x=id%3D{ext_id}%26installsource%3Dondemand%26uc"
-    );
-
-    let temp_crx = std::env::temp_dir().join(format!("{ext_id}.crx"));
-    let temp_zip = std::env::temp_dir().join(format!("{ext_id}.zip"));
-
-    let curl_status = std::process::Command::new("curl")
-        .args(["-sSL", "-A", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36", "-o"])
-        .arg(&temp_crx)
-        .arg(&crx_url)
-        .status()
-        .map_err(|e| format!("curl a échoué : {e}"))?;
-
-    if !curl_status.success() || !temp_crx.exists() {
-        return Err("Téléchargement du fichier CRX échoué.".into());
-    }
-
-    let crx_bytes = fs::read(&temp_crx).map_err(|e| format!("Lecture CRX échouée : {e}"))?;
-    let _ = fs::remove_file(&temp_crx);
-
-    let pk_magic = [0x50, 0x4b, 0x03, 0x04];
-    let Some(offset) = crx_bytes.windows(4).position(|w| w == pk_magic) else {
-        return Err("Fichier CRX invalide (en-tête ZIP introuvable).".into());
-    };
-
-    fs::write(&temp_zip, &crx_bytes[offset..]).map_err(|e| format!("Écriture ZIP échouée : {e}"))?;
-
-    let ext_target_dir = dest_dir.join(&ext_id);
-    let _ = fs::create_dir_all(&ext_target_dir);
-
-    let unzip_status = std::process::Command::new("unzip")
-        .args(["-q", "-o"])
-        .arg(&temp_zip)
-        .arg("-d")
-        .arg(&ext_target_dir)
-        .status();
-
-    let _ = fs::remove_file(&temp_zip);
-
-    if !unzip_status.map(|s| s.success()).unwrap_or(false) {
-        return Err("Extraction de l'archive de l'extension échouée.".into());
-    }
-
-    let manifest_path = ext_target_dir.join("manifest.json");
-    let mut name = ext_id.clone();
-    let mut ver = String::from("1.0");
-    if let Ok(content) = fs::read_to_string(&manifest_path)
-        && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
-    {
-        if let Some(n) = val.get("name").and_then(|v| v.as_str()) {
-            name = n.to_string();
-        }
-        if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
-            ver = v.to_string();
-        }
-    }
-
-    Ok(format!("Extension '{name}' (v{ver}) installée avec succès !"))
-}
-
-fn install_firefox_extension(slug_or_url: &str) -> Result<String, String> {
-    let slug = extract_amo_slug(slug_or_url)?;
-    let Some(dest_dir) = extensions_directory_path() else {
-        return Err("Dossier des extensions introuvable.".into());
-    };
-    let _ = fs::create_dir_all(&dest_dir);
-
-    let xpi_url = format!("https://addons.mozilla.org/firefox/downloads/latest/{slug}/latest.xpi");
-    let temp_xpi = std::env::temp_dir().join(format!("{slug}.xpi"));
-
-    let curl_status = std::process::Command::new("curl")
-        .args(["-sSL", "-A", "Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0", "-o"])
-        .arg(&temp_xpi)
-        .arg(&xpi_url)
-        .status()
-        .map_err(|e| format!("curl a échoué : {e}"))?;
-
-    if !curl_status.success() || !temp_xpi.exists() {
-        return Err("Téléchargement du module Firefox échoué.".into());
-    }
-
-    let ext_target_dir = dest_dir.join(&slug);
-    let _ = fs::create_dir_all(&ext_target_dir);
-
-    let unzip_status = std::process::Command::new("unzip")
-        .args(["-q", "-o"])
-        .arg(&temp_xpi)
-        .arg("-d")
-        .arg(&ext_target_dir)
-        .status();
-
-    let _ = fs::remove_file(&temp_xpi);
-
-    if !unzip_status.map(|s| s.success()).unwrap_or(false) {
-        return Err("Extraction de l'archive XPI échouée.".into());
-    }
-
-    let manifest_path = ext_target_dir.join("manifest.json");
-    let mut name = slug.clone();
-    let mut ver = String::from("1.0");
-    if let Ok(content) = fs::read_to_string(&manifest_path)
-        && let Ok(val) = serde_json::from_str::<serde_json::Value>(&content)
-    {
-        if let Some(n) = val.get("name").and_then(|v| v.as_str()) {
-            name = n.to_string();
-        }
-        if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
-            ver = v.to_string();
-        }
-    }
-
-    Ok(format!("Extension Firefox '{name}' (v{ver}) installée avec succès !"))
-}
-
-fn install_local_extension(path_str: &str) -> Result<String, String> {
-    let trimmed = path_str.trim().trim_matches('\'').trim_matches('"');
-    let src = Path::new(trimmed);
-    if !src.exists() {
-        return Err(format!("Le fichier '{}' n'existe pas.", src.display()));
-    }
-    let Some(dest_dir) = extensions_directory_path() else {
-        return Err("Dossier des extensions introuvable.".into());
-    };
-    let file_name = src.file_name().unwrap_or_default().to_string_lossy().to_string();
-
-    if file_name.ends_with(".user.js") || file_name.ends_with(".js") {
-        let dest = dest_dir.join(&file_name);
-        fs::copy(src, dest).map_err(|e| format!("Copie échouée : {e}"))?;
-        return Ok(format!("Userscript '{file_name}' installé avec succès !"));
-    }
-
-    if file_name.ends_with(".crx") {
-        let crx_bytes = fs::read(src).map_err(|e| format!("Lecture échouée : {e}"))?;
-        let pk_magic = [0x50, 0x4b, 0x03, 0x04];
-        let Some(offset) = crx_bytes.windows(4).position(|w| w == pk_magic) else {
-            return Err("Format CRX invalide.".into());
-        };
-        let stem = src.file_stem().unwrap_or_default().to_string_lossy();
-        let ext_target_dir = dest_dir.join(stem.as_ref());
-        let _ = fs::create_dir_all(&ext_target_dir);
-        let temp_zip = std::env::temp_dir().join("local_crx.zip");
-        fs::write(&temp_zip, &crx_bytes[offset..]).map_err(|e| format!("{e}"))?;
-        let _ = std::process::Command::new("unzip")
-            .args(["-q", "-o"])
-            .arg(&temp_zip)
-            .arg("-d")
-            .arg(&ext_target_dir)
-            .status();
-        let _ = fs::remove_file(&temp_zip);
-        return Ok(format!("Extension '{stem}' installée depuis fichier CRX !"));
-    }
-
-    if file_name.ends_with(".xpi") || file_name.ends_with(".zip") {
-        let stem = src.file_stem().unwrap_or_default().to_string_lossy();
-        let ext_target_dir = dest_dir.join(stem.as_ref());
-        let _ = fs::create_dir_all(&ext_target_dir);
-        let status = std::process::Command::new("unzip")
-            .args(["-q", "-o"])
-            .arg(src)
-            .arg("-d")
-            .arg(&ext_target_dir)
-            .status();
-        if status.map(|s| s.success()).unwrap_or(false) {
-            return Ok(format!("Archive '{stem}' extraite et installée !"));
-        } else {
-            return Err("Extraction de l'archive échouée.".into());
-        }
-    }
-
-    if src.is_dir() {
-        let stem = src.file_name().unwrap_or_default().to_string_lossy();
-        let ext_target_dir = dest_dir.join(stem.as_ref());
-        let _ = fs::create_dir_all(&ext_target_dir);
-        let _ = std::process::Command::new("cp")
-            .args(["-r", "."])
-            .current_dir(src)
-            .arg(&ext_target_dir)
-            .status();
-        return Ok(format!("Dossier d'extension '{stem}' installé !"));
-    }
-
-    Err("Format non supporté (utilisez .crx, .xpi, .zip, .user.js ou un dossier).".into())
-}
-
-fn delete_extension(path: &Path) -> Result<(), String> {
-    if path.is_dir() {
-        fs::remove_dir_all(path).map_err(|e| format!("Suppression échouée : {e}"))
-    } else {
-        fs::remove_file(path).map_err(|e| format!("Suppression échouée : {e}"))
-    }
-}
-
-#[cfg(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-))]
-fn load_bookmarks() -> HashSet<String> {
-    let Some(path) = profile_file_path(LIBRENAV_BOOKMARKS_FILE) else {
-        warn!("Could not determine LibreNav's profile directory");
-        return HashSet::new();
-    };
-    if !path.exists() {
-        return HashSet::new();
-    }
-
-    let contents = match fs::read_to_string(&path) {
-        Ok(contents) => contents,
-        Err(error) => {
-            warn!("Could not read bookmarks from {}: {error}", path.display());
-            return HashSet::new();
-        },
-    };
-    match serde_json::from_str::<Vec<String>>(&contents) {
-        Ok(bookmarks) => bookmarks.into_iter().collect(),
-        Err(error) => {
-            warn!("Could not parse bookmarks from {}: {error}", path.display());
-            HashSet::new()
-        },
-    }
-}
-
-#[cfg(not(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-)))]
-fn load_bookmarks() -> HashSet<String> {
-    HashSet::new()
-}
-
-#[cfg(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-))]
-fn save_bookmarks(bookmarks: &HashSet<String>) {
-    let Some(path) = profile_file_path(LIBRENAV_BOOKMARKS_FILE) else {
-        warn!("Could not determine LibreNav's profile directory");
-        return;
-    };
-    let Some(parent) = path.parent() else {
-        warn!("LibreNav bookmarks path has no parent: {}", path.display());
-        return;
-    };
-    if let Err(error) = fs::create_dir_all(parent) {
-        warn!(
-            "Could not create profile directory {}: {error}",
-            parent.display()
-        );
-        return;
-    }
-
-    let mut entries: Vec<_> = bookmarks.iter().collect();
-    entries.sort_unstable();
-    let contents = match serde_json::to_string_pretty(&entries) {
-        Ok(contents) => contents,
-        Err(error) => {
-            warn!("Could not serialize LibreNav bookmarks: {error}");
-            return;
-        },
-    };
-    let temporary_path = path.with_extension("json.tmp");
-    if let Err(error) = fs::write(&temporary_path, contents) {
-        warn!(
-            "Could not write bookmarks to {}: {error}",
-            temporary_path.display()
-        );
-        return;
-    }
-    if let Err(error) = fs::rename(&temporary_path, &path) {
-        warn!(
-            "Could not replace bookmarks file {}: {error}",
-            path.display()
-        );
-    }
-}
-
-#[cfg(not(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-)))]
-fn save_bookmarks(_bookmarks: &HashSet<String>) {}
-
-#[cfg(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-))]
-fn load_json_profile<T: serde::de::DeserializeOwned + Default>(file_name: &str) -> T {
-    let Some(path) = profile_file_path(file_name) else {
-        warn!("Could not determine LibreNav's profile directory");
-        return T::default();
-    };
-    if !path.exists() {
-        return T::default();
-    }
-    let contents = match fs::read_to_string(&path) {
-        Ok(contents) => contents,
-        Err(error) => {
-            warn!("Could not read profile file {}: {error}", path.display());
-            return T::default();
-        },
-    };
-    serde_json::from_str(&contents).unwrap_or_else(|error| {
-        warn!("Could not parse profile file {}: {error}", path.display());
-        T::default()
-    })
-}
-
-#[cfg(not(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-)))]
-fn load_json_profile<T: Default>(_file_name: &str) -> T {
-    T::default()
-}
-
-#[cfg(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-))]
-fn save_json_profile<T: Serialize>(file_name: &str, value: &T) {
-    let Some(path) = profile_file_path(file_name) else {
-        warn!("Could not determine LibreNav's profile directory");
-        return;
-    };
-    let Some(parent) = path.parent() else {
-        warn!("LibreNav profile path has no parent: {}", path.display());
-        return;
-    };
-    if let Err(error) = fs::create_dir_all(parent) {
-        warn!(
-            "Could not create profile directory {}: {error}",
-            parent.display()
-        );
-        return;
-    }
-    let contents = match serde_json::to_string_pretty(value) {
-        Ok(contents) => contents,
-        Err(error) => {
-            warn!(
-                "Could not serialize profile file {}: {error}",
-                path.display()
-            );
-            return;
-        },
-    };
-    let temporary_path = path.with_extension("json.tmp");
-    if let Err(error) = fs::write(&temporary_path, contents) {
-        warn!(
-            "Could not write profile file {}: {error}",
-            temporary_path.display()
-        );
-        return;
-    }
-    if let Err(error) = fs::rename(&temporary_path, &path) {
-        warn!("Could not replace profile file {}: {error}", path.display());
-    }
-}
-
-#[cfg(not(any(
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "macos"
-)))]
-fn save_json_profile<T>(_file_name: &str, _value: &T) {}
 
 #[cfg(any(
     target_os = "windows",
@@ -1202,19 +305,10 @@ impl Gui {
             options.fallback_theme = egui::Theme::Light;
         });
 
-        // The neutral surfaces follow Chromium's familiar visual hierarchy. LibreNav keeps its
-        // own name, logo and mint selection accent instead of copying Google's branding.
-        let mut visuals = egui::Visuals::dark();
-        visuals.panel_fill = Color32::from_rgb(32, 33, 36);
-        visuals.window_fill = Color32::from_rgb(53, 54, 58);
-        visuals.extreme_bg_color = Color32::from_rgb(32, 33, 36);
-        visuals.faint_bg_color = Color32::from_rgb(60, 64, 67);
-        visuals.selection.bg_fill = Color32::from_rgb(16, 185, 129);
-        visuals.selection.stroke.color = Color32::WHITE;
-        visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(53, 54, 58);
-        visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(60, 64, 67);
-        visuals.widgets.active.weak_bg_fill = Color32::from_rgb(74, 76, 80);
-        context.egui_ctx.set_visuals(visuals);
+        let browser_settings: BrowserSettings = load_json_profile(LIBRENAV_SETTINGS_FILE);
+        sync_adblock_settings(&browser_settings);
+        let palette = Self::compute_palette(&browser_settings);
+        palette.apply_to_egui(&context.egui_ctx);
 
         Self {
             rendering_context,
@@ -1228,7 +322,7 @@ impl Gui {
             can_go_forward: false,
             bookmarked_urls: load_bookmarks(),
             history: load_json_profile(LIBRENAV_HISTORY_FILE),
-            browser_settings: load_json_profile(LIBRENAV_SETTINGS_FILE),
+            browser_settings,
             browser_surface: match std::env::var("LIBRENAV_START_SURFACE").as_deref() {
                 Ok("settings") => BrowserSurface::Settings,
                 Ok("history") => BrowserSurface::History,
@@ -1241,6 +335,19 @@ impl Gui {
             ext_install_input: String::new(),
             ext_install_status: None,
         }
+    }
+
+    fn compute_palette(settings: &BrowserSettings) -> ThemePalette {
+        let base = ThemePalette::from_preset(&settings.theme_preset);
+        if let Some(ref ext_id) = settings.active_theme_extension {
+            let extensions = list_installed_extensions(&settings.language);
+            if let Some(ext) = extensions.into_iter().find(|e| e.id == *ext_id && e.enabled)
+                && let Some(ref theme_colors) = ext.theme_colors
+            {
+                return base.with_extension_theme(theme_colors);
+            }
+        }
+        base
     }
 
     pub(crate) fn has_keyboard_focus(&self) -> bool {
@@ -1549,554 +656,6 @@ impl Gui {
         tab_frame.end(ui);
     }
 
-    fn show_browser_surface(
-        ctx: &egui::Context,
-        surface: &mut BrowserSurface,
-        settings: &mut BrowserSettings,
-        history: &mut Vec<String>,
-        bookmarks: &mut HashSet<String>,
-        ext_install_input: &mut String,
-        ext_install_status: &mut Option<(bool, String)>,
-        window: &ServoShellWindow,
-    ) {
-        if *surface == BrowserSurface::None {
-            return;
-        }
-        let active_surface = *surface;
-        let mut requested_surface = active_surface;
-        let mut close = false;
-        let mut settings_changed = false;
-        let mut history_changed = false;
-        let mut bookmarks_changed = false;
-        let content_rect = ctx.content_rect();
-        let lang_str = settings.language.clone();
-        let lang = lang_str.as_str();
-
-        // Allow closing surface with Escape key
-        if ctx.input(|i| i.key_pressed(Key::Escape)) {
-            close = true;
-        }
-
-        egui::Area::new(Id::new("librenav-browser-surface"))
-            .order(Order::Foreground)
-            .fixed_pos(content_rect.min)
-            .show(ctx, |ui| {
-                egui::Frame::NONE
-                    .fill(Color32::from_rgb(32, 33, 36))
-                    .inner_margin(egui::Margin::same(24))
-                    .show(ui, |ui| {
-                        ui.set_min_size(content_rect.size() - Vec2::splat(48.0));
-                        ui.horizontal(|ui| {
-                            let back_btn = ui.add(
-                                egui::Button::new(
-                                    egui::RichText::new("←")
-                                        .size(18.0)
-                                        .color(Color32::from_rgb(138, 180, 248))
-                                        .strong(),
-                                )
-                                .min_size(Vec2::new(36.0, 32.0))
-                                .corner_radius(6.0),
-                            ).on_hover_text(t(GuiText::BackToBrowser, lang));
-                            if back_btn.clicked() {
-                                close = true;
-                            }
-                            ui.add_space(10.0);
-                            let surface_title = match active_surface {
-                                BrowserSurface::Settings => t(GuiText::Settings, lang),
-                                BrowserSurface::History => t(GuiText::History, lang),
-                                BrowserSurface::Bookmarks => t(GuiText::Bookmarks, lang),
-                                BrowserSurface::Extensions => t(GuiText::Extensions, lang),
-                                BrowserSurface::None => "",
-                            };
-                            ui.label(
-                                egui::RichText::new(format!("LibreNav › {}", surface_title))
-                                    .size(18.0)
-                                    .color(Color32::from_rgb(232, 234, 237))
-                                    .strong(),
-                            );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                egui::RichText::new("✕")
-                                                    .size(16.0)
-                                                    .color(Color32::from_rgb(154, 160, 166)),
-                                            )
-                                            .min_size(Vec2::new(32.0, 32.0))
-                                            .corner_radius(6.0),
-                                        )
-                                        .on_hover_text(t(GuiText::Close, lang))
-                                        .clicked()
-                                    {
-                                        close = true;
-                                    }
-                                },
-                            );
-                        });
-                        ui.add_space(18.0);
-                        ui.horizontal_top(|ui| {
-                            ui.vertical(|ui| {
-                                ui.set_width(240.0);
-                                ui.add_space(4.0);
-                                let items = [
-                                    (BrowserSurface::Settings, t(GuiText::Settings, lang)),
-                                    (BrowserSurface::Extensions, t(GuiText::Extensions, lang)),
-                                    (BrowserSurface::History, t(GuiText::History, lang)),
-                                    (BrowserSurface::Bookmarks, t(GuiText::Bookmarks, lang)),
-                                ];
-                                for (surf, label) in items {
-                                    let is_active = active_surface == surf;
-                                    let btn = egui::Button::selectable(
-                                        is_active,
-                                        egui::RichText::new(format!("  {}", label))
-                                            .size(14.0)
-                                            .color(if is_active {
-                                                Color32::from_rgb(138, 180, 248)
-                                            } else {
-                                                Color32::from_rgb(232, 234, 237)
-                                            }),
-                                    );
-                                    if ui.add_sized([230.0, 34.0], btn).clicked() {
-                                        requested_surface = surf;
-                                    }
-                                    ui.add_space(4.0);
-                                }
-                                ui.add_space(28.0);
-                                ui.separator();
-                                ui.add_space(10.0);
-                                ui.weak("LibreNav 0.7");
-                                ui.weak("Motoro Servo");
-                            });
-                            ui.separator();
-                            ui.add_space(20.0);
-                            egui::ScrollArea::vertical()
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    let target_width = ui.available_width().min(920.0);
-                                    ui.set_width(target_width);
-                                    match active_surface {
-                                        BrowserSurface::Settings => {
-                                            ui.heading(t(GuiText::Settings, lang));
-                                            ui.weak(t(GuiText::PrivacyDesc, lang));
-                                            ui.add_space(18.0);
-
-                                            ui.group(|ui| {
-                                                ui.heading(t(GuiText::Language, lang));
-                                                ui.label("Elektu vian lingvon / Choisissez votre langue :");
-                                                ui.horizontal(|ui| {
-                                                    for (code, label) in [
-                                                        ("eo", "Esperanto"),
-                                                        ("fr", "Français"),
-                                                        ("en", "English"),
-                                                        ("es", "Español"),
-                                                    ] {
-                                                        let is_active = settings.language == code;
-                                                        if ui.selectable_label(is_active, label).clicked() {
-                                                            settings.language = code.into();
-                                                            settings_changed = true;
-                                                            if let Some(wv) = window.active_webview()
-                                                                && let Some(u) = wv.url()
-                                                                && u.scheme() == "servo"
-                                                                && u.path() == "newtab"
-                                                            {
-                                                                let newtab_url = Url::parse(&format!("servo:newtab?lang={code}")).unwrap();
-                                                                wv.load(newtab_url);
-                                                            }
-                                                        }
-                                                    }
-                                                });
-                                            });
-                                            ui.add_space(12.0);
-
-                                            ui.group(|ui| {
-                                                ui.heading(t(GuiText::Appearance, lang));
-                                                settings_changed |= ui
-                                                    .checkbox(
-                                                        &mut settings.show_home_button,
-                                                        t(GuiText::ShowHomeButton, lang),
-                                                    )
-                                                    .changed();
-                                                settings_changed |= ui
-                                                    .checkbox(
-                                                        &mut settings.show_bookmarks_bar,
-                                                        t(GuiText::ShowBookmarksBar, lang),
-                                                    )
-                                                    .changed();
-                                            });
-                                            ui.add_space(12.0);
-                                            ui.group(|ui| {
-                                                ui.heading(t(GuiText::Homepage, lang));
-                                                ui.label(t(GuiText::HomepageDesc, lang));
-                                                settings_changed |= ui
-                                                    .add(
-                                                        egui::TextEdit::singleline(&mut settings.homepage)
-                                                            .desired_width(f32::INFINITY),
-                                                    )
-                                                    .changed();
-                                                if !settings.homepage_is_valid() {
-                                                    ui.colored_label(
-                                                        Color32::from_rgb(242, 139, 130),
-                                                        t(GuiText::InvalidHomepage, lang),
-                                                    );
-                                                }
-                                            });
-                                            ui.add_space(12.0);
-                                            ui.group(|ui| {
-                                                ui.heading(t(GuiText::SearchEngine, lang));
-                                                ui.label(t(GuiText::SearchEngineDesc, lang));
-                                                settings_changed |= ui
-                                                    .add(
-                                                        egui::TextEdit::singleline(&mut settings.searchpage)
-                                                            .desired_width(f32::INFINITY),
-                                                    )
-                                                    .changed();
-                                                if !settings.searchpage_is_valid() {
-                                                    ui.colored_label(
-                                                        Color32::from_rgb(242, 139, 130),
-                                                        t(GuiText::InvalidSearchpage, lang),
-                                                    );
-                                                }
-                                            });
-                                            ui.add_space(12.0);
-                                            ui.group(|ui| {
-                                                ui.heading(t(GuiText::Privacy, lang));
-                                                ui.label(t(GuiText::PrivacyDesc, lang));
-                                            });
-                                            ui.add_space(12.0);
-                                            ui.group(|ui| {
-                                                ui.heading(t(GuiText::ExtensionsTitle, lang));
-                                                ui.label(t(GuiText::ExtensionsSubtitle, lang));
-                                                if ui.button(t(GuiText::Extensions, lang)).clicked() {
-                                                    requested_surface = BrowserSurface::Extensions;
-                                                }
-                                            });
-                                        },
-                                        BrowserSurface::History => {
-                                            ui.horizontal(|ui| {
-                                                ui.heading(t(GuiText::History, lang));
-                                                if !history.is_empty()
-                                                    && ui.button(t(GuiText::ClearHistory, lang)).clicked()
-                                                {
-                                                    history.clear();
-                                                    history_changed = true;
-                                                }
-                                            });
-                                            ui.separator();
-                                            if history.is_empty() {
-                                                ui.weak(t(GuiText::NoHistory, lang));
-                                            } else {
-                                                for url in history.iter() {
-                                                    if ui.link(url).clicked() {
-                                                        window.queue_user_interface_command(
-                                                            UserInterfaceCommand::Go(url.clone()),
-                                                        );
-                                                        close = true;
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        BrowserSurface::Bookmarks => {
-                                            ui.heading(t(GuiText::Bookmarks, lang));
-                                            ui.separator();
-                                            if bookmarks.is_empty() {
-                                                ui.weak(t(GuiText::NoBookmarks, lang));
-                                            } else {
-                                                let mut remove = None;
-                                                let mut entries: Vec<_> =
-                                                    bookmarks.iter().cloned().collect();
-                                                entries.sort_unstable();
-                                                for url in entries {
-                                                    ui.horizontal(|ui| {
-                                                        if ui.link(&url).clicked() {
-                                                            window.queue_user_interface_command(
-                                                                UserInterfaceCommand::Go(url.clone()),
-                                                            );
-                                                            close = true;
-                                                        }
-                                                        if ui.button(t(GuiText::Delete, lang)).clicked() {
-                                                            remove = Some(url);
-                                                        }
-                                                    });
-                                                }
-                                                if let Some(url) = remove {
-                                                    bookmarks.remove(&url);
-                                                    bookmarks_changed = true;
-                                                }
-                                            }
-                                        },
-                                        BrowserSurface::Extensions => {
-                                            ui.heading(t(GuiText::ExtensionsTitle, lang));
-                                            ui.weak(t(GuiText::ExtensionsSubtitle, lang));
-                                            ui.add_space(14.0);
-
-                                            // Installation group
-                                            ui.group(|ui| {
-                                                ui.heading(t(GuiText::InstallExtension, lang));
-                                                ui.add_space(4.0);
-                                                ui.label(t(GuiText::ExtensionInputPlaceholder, lang));
-                                                ui.add(
-                                                    egui::TextEdit::singleline(ext_install_input)
-                                                        .desired_width(f32::INFINITY)
-                                                );
-                                                ui.add_space(8.0);
-                                                ui.horizontal_wrapped(|ui| {
-                                                    if ui.button(format!("• {}", t(GuiText::InstallFromChromeStore, lang))).clicked() {
-                                                        if ext_install_input.trim().is_empty() {
-                                                            *ext_install_status = Some((false, "Veuillez entrer un ID ou une URL Chrome.".into()));
-                                                        } else {
-                                                            match install_chrome_extension(ext_install_input.trim()) {
-                                                                Ok(msg) => {
-                                                                    *ext_install_status = Some((true, msg));
-                                                                    ext_install_input.clear();
-                                                                }
-                                                                Err(e) => {
-                                                                    *ext_install_status = Some((false, e));
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    if ui.button(format!("• {}", t(GuiText::InstallFromFirefoxAddons, lang))).clicked() {
-                                                        if ext_install_input.trim().is_empty() {
-                                                            *ext_install_status = Some((false, "Veuillez entrer un identifiant ou une URL Firefox.".into()));
-                                                        } else {
-                                                            match install_firefox_extension(ext_install_input.trim()) {
-                                                                Ok(msg) => {
-                                                                    *ext_install_status = Some((true, msg));
-                                                                    ext_install_input.clear();
-                                                                }
-                                                                Err(e) => {
-                                                                    *ext_install_status = Some((false, e));
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    if ui.button(format!("• {}", t(GuiText::InstallLocalFile, lang))).clicked() {
-                                                        if ext_install_input.trim().is_empty() {
-                                                            *ext_install_status = Some((false, "Veuillez spécifier le chemin local du fichier.".into()));
-                                                        } else {
-                                                            match install_local_extension(ext_install_input.trim()) {
-                                                                Ok(msg) => {
-                                                                    *ext_install_status = Some((true, msg));
-                                                                    ext_install_input.clear();
-                                                                }
-                                                                Err(e) => {
-                                                                    *ext_install_status = Some((false, e));
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                });
-
-                                                if let Some((success, msg)) = ext_install_status.as_ref() {
-                                                    ui.add_space(6.0);
-                                                    if *success {
-                                                        ui.colored_label(Color32::from_rgb(52, 168, 83), format!("✓ {msg}"));
-                                                    } else {
-                                                        ui.colored_label(Color32::from_rgb(234, 67, 53), format!("✕ {msg}"));
-                                                    }
-                                                }
-                                            });
-
-                                            ui.add_space(14.0);
-
-                                            // Popular 1-Click Extensions
-                                            let installed = list_installed_extensions();
-                                            let has_darkreader = installed.iter().any(|e| {
-                                                e.name.to_lowercase().contains("dark reader")
-                                                    || e.path.to_string_lossy().contains("eimadpbcbfnmbkopoojfekhnkhdbieeh")
-                                            });
-                                            let has_bitwarden = installed.iter().any(|e| {
-                                                e.name.to_lowercase().contains("bitwarden")
-                                                    || e.path.to_string_lossy().contains("nngceckbapebfimnlniiiahkandclblb")
-                                            });
-                                            let has_violentmonkey = installed.iter().any(|e| {
-                                                e.name.to_lowercase().contains("violentmonkey")
-                                                    || e.path.to_string_lossy().contains("jinjaccalgkegednnccohejagnlnfdag")
-                                            });
-
-                                            ui.group(|ui| {
-                                                ui.heading(t(GuiText::PopularExtensions, lang));
-                                                ui.add_space(4.0);
-
-                                                // uBlock Origin (Built-in)
-                                                ui.horizontal(|ui| {
-                                                    ui.strong("uBlock Origin");
-                                                    ui.weak("v1.75.0 (Officiel)");
-                                                    ui.colored_label(Color32::from_rgb(52, 168, 83), "✓ Intégré");
-                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                        if ui.button("• Tableau de bord").clicked() {
-                                                            window.queue_user_interface_command(UserInterfaceCommand::Go("servo:ublock-dashboard".into()));
-                                                            close = true;
-                                                        }
-                                                        if ui.button(format!("• {}", t(GuiText::UblockOpenPopup, lang))).clicked() {
-                                                            window.queue_user_interface_command(UserInterfaceCommand::Go("servo:ublock".into()));
-                                                            close = true;
-                                                        }
-                                                    });
-                                                });
-                                                ui.separator();
-
-                                                // Dark Reader
-                                                ui.horizontal(|ui| {
-                                                    ui.strong("Dark Reader");
-                                                    ui.label("Mode sombre élégant pour tous les sites web");
-                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                        if has_darkreader {
-                                                            ui.colored_label(Color32::from_rgb(52, 168, 83), format!("✓ {}", t(GuiText::InstalledBadge, lang)));
-                                                        } else if ui.button("+ Installer (Chrome CRX)").clicked() {
-                                                            match install_chrome_extension("eimadpbcbfnmbkopoojfekhnkhdbieeh") {
-                                                                Ok(msg) => *ext_install_status = Some((true, msg)),
-                                                                Err(e) => *ext_install_status = Some((false, e)),
-                                                            }
-                                                        }
-                                                    });
-                                                });
-                                                ui.separator();
-
-                                                // Bitwarden
-                                                ui.horizontal(|ui| {
-                                                    ui.strong("Bitwarden");
-                                                    ui.label("Gestionnaire de mots de passe");
-                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                        if has_bitwarden {
-                                                            ui.colored_label(Color32::from_rgb(52, 168, 83), format!("✓ {}", t(GuiText::InstalledBadge, lang)));
-                                                        } else if ui.button("+ Installer (Chrome CRX)").clicked() {
-                                                            match install_chrome_extension("nngceckbapebfimnlniiiahkandclblb") {
-                                                                Ok(msg) => *ext_install_status = Some((true, msg)),
-                                                                Err(e) => *ext_install_status = Some((false, e)),
-                                                            }
-                                                        }
-                                                    });
-                                                });
-                                                ui.separator();
-
-                                                // Violentmonkey
-                                                ui.horizontal(|ui| {
-                                                    ui.strong("Violentmonkey");
-                                                    ui.label("Gestionnaire de scripts utilisateur");
-                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                        if has_violentmonkey {
-                                                            ui.colored_label(Color32::from_rgb(52, 168, 83), format!("✓ {}", t(GuiText::InstalledBadge, lang)));
-                                                        } else if ui.button("+ Installer (Firefox XPI)").clicked() {
-                                                            match install_firefox_extension("violentmonkey") {
-                                                                Ok(msg) => *ext_install_status = Some((true, msg)),
-                                                                Err(e) => *ext_install_status = Some((false, e)),
-                                                            }
-                                                        }
-                                                    });
-                                                });
-                                            });
-
-                                            ui.add_space(14.0);
-
-                                            // Catalogs & Directory
-                                            ui.group(|ui| {
-                                                ui.heading("Catalogues & Répertoires");
-                                                ui.horizontal(|ui| {
-                                                    if ui.button(format!("• {}", t(GuiText::OpenChromeStore, lang))).clicked() {
-                                                        window.queue_user_interface_command(UserInterfaceCommand::Go(
-                                                            "https://chromewebstore.google.com/".into(),
-                                                        ));
-                                                        close = true;
-                                                    }
-                                                    if ui.button(format!("• {}", t(GuiText::OpenFirefoxAddons, lang))).clicked() {
-                                                        window.queue_user_interface_command(UserInterfaceCommand::Go(
-                                                            "https://addons.mozilla.org/".into(),
-                                                        ));
-                                                        close = true;
-                                                    }
-                                                    if ui.button(format!("• {}", t(GuiText::OpenGreasyFork, lang))).clicked() {
-                                                        window.queue_user_interface_command(UserInterfaceCommand::Go(
-                                                            "https://greasyfork.org/".into(),
-                                                        ));
-                                                        close = true;
-                                                    }
-                                                    if let Some(dir) = extensions_directory_path() {
-                                                        if ui.button(format!("• {}", t(GuiText::OpenExtensionsDir, lang))).clicked() {
-                                                            #[cfg(target_os = "linux")]
-                                                            let _ = std::process::Command::new("xdg-open").arg(dir).spawn();
-                                                        }
-                                                    }
-                                                });
-                                            });
-
-                                            ui.add_space(14.0);
-
-                                            // Installed Extensions List
-                                            ui.heading(format!("{} ({})", t(GuiText::InstalledExtensionsCount, lang), installed.len()));
-                                            ui.separator();
-                                            ui.add_space(6.0);
-
-                                            if installed.is_empty() {
-                                                ui.weak(t(GuiText::NoExtensions, lang));
-                                            } else {
-                                                let mut ext_to_delete = None;
-                                                for ext in installed {
-                                                    ui.group(|ui| {
-                                                        ui.horizontal(|ui| {
-                                                            let badge = if ext.is_dir {
-                                                                t(GuiText::WebExtensionBadge, lang)
-                                                            } else {
-                                                                t(GuiText::UserscriptBadge, lang)
-                                                            };
-                                                            ui.strong(&ext.name);
-                                                            ui.weak(badge);
-                                                            if let Some(ref ver) = ext.version {
-                                                                ui.weak(format!("v{ver}"));
-                                                            }
-                                                            ui.colored_label(Color32::from_rgb(52, 168, 83), t(GuiText::ActiveStatus, lang));
-
-                                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                                if ui.button(egui::RichText::new("✕ Supprimer").color(Color32::from_rgb(234, 67, 53))).clicked() {
-                                                                    ext_to_delete = Some(ext.path.clone());
-                                                                }
-                                                            });
-                                                        });
-                                                        if let Some(ref desc) = ext.description {
-                                                            ui.label(desc);
-                                                        }
-                                                        ui.weak(format!("Dossier: {}", ext.path.display()));
-                                                    });
-                                                    ui.add_space(6.0);
-                                                }
-                                                if let Some(path) = ext_to_delete {
-                                                    match delete_extension(&path) {
-                                                        Ok(_) => {
-                                                            *ext_install_status = Some((true, "Extension supprimée avec succès.".into()));
-                                                        }
-                                                        Err(e) => {
-                                                            *ext_install_status = Some((false, e));
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        },
-                                        BrowserSurface::None => {},
-                                    }
-                                });
-                        });
-                    });
-            });
-
-        if settings_changed && settings.homepage_is_valid() && settings.searchpage_is_valid() {
-            save_json_profile(LIBRENAV_SETTINGS_FILE, settings);
-        }
-        if history_changed {
-            save_json_profile(LIBRENAV_HISTORY_FILE, history);
-        }
-        if bookmarks_changed {
-            save_bookmarks(bookmarks);
-        }
-        *surface = if close {
-            BrowserSurface::None
-        } else {
-            requested_surface
-        };
-    }
-
-    /// Update the user interface, but do not paint the updated state.
     pub(crate) fn update(
         &mut self,
         state: &RunningAppState,
@@ -2125,6 +684,7 @@ impl Gui {
         let winit_window = headed_window.winit_window();
         let lang_str = browser_settings.language.clone();
         let lang = lang_str.as_str();
+        let palette = Self::compute_palette(browser_settings);
         context.run(winit_window, |ctx| {
             load_pending_favicons(ctx, window, favicon_textures);
 
@@ -2134,7 +694,7 @@ impl Gui {
             if !headed_window.is_fullscreen_from_document() {
                 // Chromium-style ordering: tabs at the top, navigation controls below.
                 let tab_frame = egui::Frame::default()
-                    .fill(Color32::from_rgb(32, 33, 36))
+                    .fill(palette.tab_strip_bg)
                     .inner_margin(egui::Margin::symmetric(8, 5));
                 Panel::top("tabs").frame(tab_frame).show_inside(ctx, |ui| {
                     ui.set_min_height(CHROMIUM_TAB_STRIP_HEIGHT);
@@ -2171,7 +731,7 @@ impl Gui {
                 });
 
                 let toolbar_frame = egui::Frame::default()
-                    .fill(Color32::from_rgb(53, 54, 58))
+                    .fill(palette.toolbar_bg)
                     .inner_margin(egui::Margin::symmetric(8, 6));
                 let outer = Panel::top("toolbar")
                     .frame(toolbar_frame)
@@ -2358,15 +918,25 @@ impl Gui {
                                                         } else {
                                                             browser_settings.ublock_enabled = !browser_settings.ublock_enabled;
                                                         }
+                                                        sync_adblock_settings(browser_settings);
                                                         save_json_profile(LIBRENAV_SETTINGS_FILE, browser_settings);
                                                     }
 
                                                     ui.add_space(4.0);
                                                     if is_filtering {
-                                                        ui.colored_label(Color32::from_rgb(52, 168, 83), t(GuiText::UblockPowerOn, lang));
+                                                        ui.colored_label(palette.success, t(GuiText::UblockPowerOn, lang));
                                                     } else {
-                                                        ui.colored_label(Color32::from_rgb(234, 67, 53), t(GuiText::UblockPowerOff, lang));
+                                                        ui.colored_label(palette.danger, t(GuiText::UblockPowerOff, lang));
                                                     }
+                                                    ui.label(
+                                                        egui::RichText::new(format!(
+                                                            "{} : {}",
+                                                            t(GuiText::BlockedRequestsLabel, lang),
+                                                            blocked_requests_count()
+                                                        ))
+                                                        .size(12.0)
+                                                        .color(palette.text_secondary),
+                                                    );
                                                 });
 
                                                 ui.add_space(8.0);
@@ -2413,20 +983,26 @@ impl Gui {
                                                 ui.separator();
                                                 ui.add_space(6.0);
 
-                                                let installed = list_installed_extensions();
+                                                let installed = list_installed_extensions(lang);
                                                 if installed.is_empty() {
                                                     ui.weak(t(GuiText::NoExtensions, lang));
                                                 } else {
                                                     for ext in installed {
                                                         ui.horizontal(|ui| {
-                                                            let badge = if ext.is_dir {
-                                                                t(GuiText::WebExtensionBadge, lang)
-                                                            } else {
-                                                                t(GuiText::UserscriptBadge, lang)
+                                                            let badge = match ext.kind {
+                                                                ExtensionKind::Theme => t(GuiText::ThemeBadge, lang),
+                                                                ExtensionKind::Userscript => t(GuiText::UserscriptBadge, lang),
+                                                                ExtensionKind::ContentScript | ExtensionKind::WebExtension => {
+                                                                    t(GuiText::WebExtensionBadge, lang)
+                                                                },
                                                             };
-                                                            ui.label(format!("• {} {}", ext.name, badge));
+                                                            ui.label(format!("• {} [{}]", ext.name, badge));
                                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                                ui.colored_label(Color32::from_rgb(52, 168, 83), t(GuiText::ActiveStatus, lang));
+                                                                if ext.enabled {
+                                                                    ui.colored_label(palette.success, t(GuiText::ActiveStatus, lang));
+                                                                } else {
+                                                                    ui.colored_label(palette.text_secondary, t(GuiText::InactiveStatus, lang));
+                                                                }
                                                             });
                                                         });
                                                     }
@@ -2760,7 +1336,7 @@ impl Gui {
 
                 if browser_settings.show_bookmarks_bar {
                     let bookmarks_frame = egui::Frame::default()
-                        .fill(Color32::from_rgb(41, 42, 45))
+                        .fill(palette.bookmarks_bg)
                         .inner_margin(egui::Margin::symmetric(10, 4));
                     let bookmarks_panel = Panel::top("bookmarks_bar")
                         .frame(bookmarks_frame)
@@ -2803,8 +1379,9 @@ impl Gui {
                 *toolbar_height = Length::default();
             }
 
-            Self::show_browser_surface(
+            let settings_changed = crate::desktop::surface::show_browser_surface(
                 ctx,
+                &palette,
                 browser_surface,
                 browser_settings,
                 history,
@@ -2813,6 +1390,10 @@ impl Gui {
                 ext_install_status,
                 window,
             );
+            if settings_changed {
+                let updated_palette = Self::compute_palette(browser_settings);
+                updated_palette.apply_to_egui(ctx);
+            }
 
             let scale =
                 Scale::<_, DeviceIndependentPixel, DevicePixel>::new(ctx.pixels_per_point());

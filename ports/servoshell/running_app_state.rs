@@ -35,7 +35,7 @@ use servo::{
     JSValue, LoadStatus, MediaSessionEvent, PermissionRequest, PrefValue, Preferences,
     ScreenshotCaptureError, Servo, ServoDelegate, ServoError, TraversalId, UserContentManager,
     WebDriverCommandMsg, WebDriverJSResult, WebDriverLoadStatus, WebDriverScriptCommand,
-    WebDriverSenders, WebView, WebViewDelegate, WebViewId,
+    WebDriverSenders, WebResourceLoad, WebResourceResponse, WebView, WebViewDelegate, WebViewId,
 };
 use url::Url;
 
@@ -843,8 +843,39 @@ impl WebViewDelegate for RunningAppState {
             .set_cursor(cursor);
     }
 
+    fn load_web_resource(&self, webview: WebView, load: WebResourceLoad) {
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+        {
+            let page_url = webview.url();
+            if crate::desktop::extensions::should_block_request(
+                load.request().url.as_url(),
+                page_url.as_ref(),
+            ) {
+                let response = WebResourceResponse::new(load.request().url.clone().into_url());
+                load.intercept(response).cancel();
+            }
+        }
+    }
+
     fn notify_load_status_changed(&self, webview: WebView, status: LoadStatus) {
         self.window_for_webview(&webview).set_needs_update();
+
+        #[cfg(not(any(target_os = "android", target_env = "ohos")))]
+        if status == LoadStatus::Complete
+            && let Some(page_url) = webview.url()
+        {
+            let settings: crate::desktop::settings::BrowserSettings =
+                crate::desktop::settings::load_json_profile(
+                    crate::desktop::settings::LIBRENAV_SETTINGS_FILE,
+                );
+            if let Some(script) = crate::desktop::extensions::build_injection_script_for_url(
+                &page_url,
+                &settings.language,
+                settings.content_scripts_enabled,
+            ) {
+                webview.evaluate_javascript(script, |_| {});
+            }
+        }
 
         if status == LoadStatus::Complete {
             if let Some(sender) = self

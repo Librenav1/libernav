@@ -9,6 +9,7 @@ pub(crate) mod app;
 pub(crate) mod cli;
 pub(crate) mod dialog;
 pub(crate) mod event_loop;
+pub(crate) mod extensions;
 #[cfg(feature = "gamepad")]
 pub(crate) mod gamepad;
 pub mod geometry;
@@ -17,6 +18,9 @@ pub(crate) mod headed_window;
 mod headless_window;
 mod keyutils;
 mod protocols;
+pub(crate) mod settings;
+mod surface;
+pub(crate) mod theme;
 mod tracing;
 #[cfg(feature = "webxr")]
 mod webxr;
