@@ -1038,11 +1038,14 @@ impl Gui {
                                                                     .color(palette.text_secondary),
                                                             );
                                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                                if ext.enabled {
-                                                                    ui.colored_label(palette.success, t(GuiText::ActiveStatus, lang));
+                                                                let (dot_color, label, text_color) = if ext.enabled {
+                                                                    (palette.success, t(GuiText::ActiveStatus, lang), palette.success)
                                                                 } else {
-                                                                    ui.colored_label(palette.text_secondary, t(GuiText::InactiveStatus, lang));
-                                                                }
+                                                                    (palette.text_secondary, t(GuiText::InactiveStatus, lang), palette.text_secondary)
+                                                                };
+                                                                ui.colored_label(text_color, label);
+                                                                let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), Sense::hover());
+                                                                ui.painter().circle_filled(dot_rect.center(), 3.5, dot_color);
                                                             });
                                                         });
                                                         ui.add_space(3.0);
