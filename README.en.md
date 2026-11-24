@@ -1,8 +1,19 @@
+<div align="center">
+
+<img src="resources/librenav.svg" alt="LibreNav" width="96" height="96">
+
 # LibreNav
+
+**Free desktop browser powered by Servo — Alpha (`0.7.0-alpha`, in active development)**
 
 [Esperanto](README.md) · [Français](README.fr.md) · [English](README.en.md) · [Español](README.es.md)
 
-LibreNav is a free desktop-browser prototype: a familiar Chromium-style interface powered by Servo instead of Chromium. It copies no closed Google code, branding, or services.
+![Status: alpha (dev)](docs/badges/status.svg) ![Version: 0.7.0-alpha](docs/badges/version.svg) ![License: MPL-2.0](docs/badges/license.svg) ![Engine: Servo](docs/badges/engine.svg)
+
+</div>
+
+> [!WARNING]
+> **Alpha / Under active development**: LibreNav is in **alpha**. The UI, filter engine, and script runtime are evolving rapidly, and web compatibility follows Servo's current engine capabilities. Not yet ready as a daily driver.
 
 ## Quick start
 

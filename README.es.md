@@ -1,8 +1,19 @@
+<div align="center">
+
+<img src="resources/librenav.svg" alt="LibreNav" width="96" height="96">
+
 # LibreNav
+
+**Navegador de escritorio libre basado en Servo — Versión Alpha (`0.7.0-alpha`, en desarrollo)**
 
 [Esperanto](README.md) · [Français](README.fr.md) · [English](README.en.md) · [Español](README.es.md)
 
-LibreNav es un prototipo libre de navegador de escritorio: una interfaz familiar inspirada en Chromium, impulsada por Servo en lugar de Chromium. No copia código cerrado, marcas ni servicios de Google.
+![Estado: alpha (dev)](docs/badges/status.svg) ![Versión: 0.7.0-alpha](docs/badges/version.svg) ![Licencia: MPL-2.0](docs/badges/license.svg) ![Motor: Servo](docs/badges/engine.svg)
+
+</div>
+
+> [!WARNING]
+> **Alpha / En desarrollo activo**: LibreNav está en fase **alpha**. La interfaz, el motor de filtrado y la gestión de scripts evolucionan activamente, y la compatibilidad web depende del estado actual de Servo. Aún no está listo para uso diario principal.
 
 ## Inicio rápido
 
