@@ -8,7 +8,7 @@
 
 [Esperanto](README.md) · [Français](README.fr.md) · [English](README.en.md) · [Español](README.es.md)
 
-![Statut: alpha (dev)](docs/badges/status.svg) ![Versio: 0.1](docs/badges/version.svg) ![Permesilo: MPL-2.0](docs/badges/license.svg) ![Motoro: Servo](docs/badges/engine.svg)
+![Statut: alpha (dev)](docs/badges/status.svg) ![Versio: 0.7.0-alpha](docs/badges/version.svg) ![Permesilo: MPL-2.0](docs/badges/license.svg) ![Motoro: Servo](docs/badges/engine.svg)
 
 </div>
 
