@@ -7,10 +7,14 @@ use std::collections::HashSet;
 use egui::{Color32, CornerRadius, Id, Key, Order, Rect, Sense, Stroke, pos2, vec2};
 use url::Url;
 
+use crate::desktop::adblocker::{
+    blocked_requests_count, download_filter_list, list_filter_lists,
+    sync_settings as sync_adblock_settings,
+};
 use crate::desktop::extensions::{
-    ExtensionInfo, ExtensionKind, blocked_requests_count, delete_extension,
-    install_chrome_extension, install_firefox_extension, install_local_extension,
-    list_installed_extensions, set_extension_enabled, sync_adblock_settings,
+    ExtensionInfo, ExtensionKind, delete_extension, install_chrome_extension,
+    install_firefox_extension, install_local_extension, install_userscript_url,
+    list_installed_extensions, set_extension_enabled,
 };
 use crate::desktop::settings::{
     BrowserSettings, BrowserSurface, GuiText, LIBRENAV_BOOKMARKS_FILE, LIBRENAV_HISTORY_FILE,
@@ -490,12 +494,12 @@ fn render_extensions(
     );
     ui.add_space(16.0);
 
-    // Built-in uBlock Origin card
+    // Built-in adblock-rust Shield card
     ui_card(ui, palette, |ui| {
         ui.horizontal(|ui| {
-            ui_badge(ui, "uBlock Origin", palette.accent_soft, palette.accent);
+            ui_badge(ui, "Bouclier LibreNav", palette.accent_soft, palette.accent);
             ui.label(
-                egui::RichText::new("v1.75.0")
+                egui::RichText::new("adblock-rust (EasyList / uBlock)")
                     .size(13.0)
                     .color(palette.text_secondary),
             );
@@ -506,20 +510,6 @@ fn render_extensions(
                 palette.input_bg,
                 palette.text_primary,
             );
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui_secondary_button(ui, palette, "Dashboard") {
-                    window.queue_user_interface_command(UserInterfaceCommand::Go(
-                        "resource:///ublock/dashboard.html".into(),
-                    ));
-                    *close = true;
-                }
-                if ui_primary_button(ui, palette, t(GuiText::UblockOpenPopup, lang)) {
-                    window.queue_user_interface_command(UserInterfaceCommand::Go(
-                        "resource:///ublock/popup-fenix.html".into(),
-                    ));
-                    *close = true;
-                }
-            });
         });
         ui.add_space(10.0);
         ui_divider(ui, palette);
@@ -531,6 +521,44 @@ fn render_extensions(
             t(GuiText::UblockPowerOn, lang),
             None,
         );
+        ui.add_space(10.0);
+        ui_divider(ui, palette);
+        ui.add_space(8.0);
+
+        for list in list_filter_lists() {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(list.name)
+                        .size(13.5)
+                        .color(palette.text_primary)
+                        .strong(),
+                );
+                let status_label = if list.installed {
+                    format!("{} règles", list.line_count)
+                } else {
+                    "Non téléchargée".to_string()
+                };
+                ui.label(
+                    egui::RichText::new(status_label)
+                        .size(12.0)
+                        .color(palette.text_secondary),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let btn_label = if list.installed {
+                        "Mettre à jour"
+                    } else {
+                        "Télécharger"
+                    };
+                    if ui_secondary_button(ui, palette, btn_label) {
+                        match download_filter_list(list.id) {
+                            Ok(msg) => *ext_install_status = Some((true, msg)),
+                            Err(e) => *ext_install_status = Some((false, e)),
+                        }
+                    }
+                });
+            });
+            ui.add_space(4.0);
+        }
     });
 
     ui.add_space(14.0);
@@ -547,7 +575,19 @@ fn render_extensions(
         );
         ui.add_space(10.0);
         ui.horizontal_wrapped(|ui| {
-            if ui_primary_button(ui, palette, t(GuiText::InstallFromChromeStore, lang)) {
+            if ui_primary_button(ui, palette, "GreasyFork / .user.js") {
+                let input = ext_install_input.trim().to_string();
+                if !input.is_empty() {
+                    match install_userscript_url(&input) {
+                        Ok(msg) => {
+                            *ext_install_status = Some((true, msg));
+                            ext_install_input.clear();
+                        },
+                        Err(e) => *ext_install_status = Some((false, e)),
+                    }
+                }
+            }
+            if ui_secondary_button(ui, palette, t(GuiText::InstallFromChromeStore, lang)) {
                 let input = ext_install_input.trim().to_string();
                 if !input.is_empty() {
                     match install_chrome_extension(&input, lang) {

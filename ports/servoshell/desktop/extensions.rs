@@ -5,14 +5,12 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{OnceLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::desktop::settings::{
-    BrowserSettings, LIBRENAV_EXTENSIONS_STATE_FILE, extensions_directory_path, load_json_profile,
+    LIBRENAV_EXTENSIONS_STATE_FILE, extensions_directory_path, load_json_profile,
     save_json_profile,
 };
 use crate::desktop::theme::{ExtensionThemeColors, parse_extension_theme};
@@ -25,12 +23,19 @@ pub(crate) enum ExtensionKind {
     WebExtension,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RunAt {
+    DocumentStart,
+    DocumentEnd,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ContentScriptRule {
     pub(crate) matches: Vec<String>,
     pub(crate) exclude_matches: Vec<String>,
     pub(crate) js_files: Vec<PathBuf>,
     pub(crate) css_files: Vec<PathBuf>,
+    pub(crate) run_at: RunAt,
 }
 
 #[derive(Clone, Debug)]
@@ -50,137 +55,6 @@ pub(crate) struct ExtensionInfo {
 #[serde(default)]
 struct ExtensionStateStore {
     disabled_ids: HashSet<String>,
-}
-
-#[derive(Clone, Debug)]
-struct AdBlockerState {
-    enabled: bool,
-    disabled_hosts: HashSet<String>,
-}
-
-impl Default for AdBlockerState {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            disabled_hosts: HashSet::new(),
-        }
-    }
-}
-
-static ADBLOCK_STATE: OnceLock<RwLock<AdBlockerState>> = OnceLock::new();
-static ADBLOCK_BLOCKED_COUNT: AtomicU64 = AtomicU64::new(0);
-
-fn adblock_state() -> &'static RwLock<AdBlockerState> {
-    ADBLOCK_STATE.get_or_init(|| RwLock::new(AdBlockerState::default()))
-}
-
-pub(crate) fn sync_adblock_settings(settings: &BrowserSettings) {
-    if let Ok(mut guard) = adblock_state().write() {
-        guard.enabled = settings.ublock_enabled;
-        guard.disabled_hosts = settings.ublock_disabled_hosts.clone();
-    }
-}
-
-pub(crate) fn blocked_requests_count() -> u64 {
-    ADBLOCK_BLOCKED_COUNT.load(Ordering::Relaxed)
-}
-
-pub(crate) fn should_block_request(request_url: &Url, page_url: Option<&Url>) -> bool {
-    let scheme = request_url.scheme();
-    if scheme != "http" && scheme != "https" {
-        return false;
-    }
-
-    let Ok(guard) = adblock_state().read() else {
-        return false;
-    };
-    if !guard.enabled {
-        return false;
-    }
-    if let Some(page_host) = page_url.and_then(|u| u.host_str())
-        && guard.disabled_hosts.contains(page_host)
-    {
-        return false;
-    }
-
-    let Some(host) = request_url.host_str() else {
-        return false;
-    };
-    let host_lower = host.to_ascii_lowercase();
-
-    // Never block first-party main-page host requests.
-    if let Some(page_host) = page_url.and_then(|u| u.host_str())
-        && host_lower == page_host.to_ascii_lowercase()
-    {
-        return false;
-    }
-
-    if is_known_tracker_or_ad_host(&host_lower) || is_tracker_url_pattern(request_url.as_str()) {
-        ADBLOCK_BLOCKED_COUNT.fetch_add(1, Ordering::Relaxed);
-        return true;
-    }
-    false
-}
-
-fn is_known_tracker_or_ad_host(host: &str) -> bool {
-    const BLOCKED_DOMAINS: &[&str] = &[
-        "doubleclick.net",
-        "googlesyndication.com",
-        "googleadservices.com",
-        "google-analytics.com",
-        "googletagmanager.com",
-        "googletagservices.com",
-        "adservice.google.com",
-        "pagead2.googlesyndication.com",
-        "connect.facebook.net",
-        "pixel.facebook.com",
-        "analytics.twitter.com",
-        "ads-twitter.com",
-        "taboola.com",
-        "outbrain.com",
-        "criteo.com",
-        "criteo.net",
-        "adnxs.com",
-        "pubmatic.com",
-        "rubiconproject.com",
-        "openx.net",
-        "casalemedia.com",
-        "scorecardresearch.com",
-        "quantserve.com",
-        "hotjar.com",
-        "mixpanel.com",
-        "segment.io",
-        "segment.com",
-        "amplitude.com",
-        "clarity.ms",
-        "mc.yandex.ru",
-        "amazon-adsystem.com",
-        "moatads.com",
-        "bidswitch.net",
-        "smartadserver.com",
-        "teads.tv",
-        "adsrvr.org",
-        "demdex.net",
-        "omtrdc.net",
-        "chartbeat.com",
-        "newrelic.com",
-        "nr-data.net",
-        "bugsnag.com",
-    ];
-
-    BLOCKED_DOMAINS
-        .iter()
-        .any(|&domain| host == domain || host.ends_with(&format!(".{domain}")))
-}
-
-fn is_tracker_url_pattern(url: &str) -> bool {
-    let lower = url.to_ascii_lowercase();
-    lower.contains("/pagead/")
-        || lower.contains("/ads/ga-audiences")
-        || lower.contains("/gtag/js")
-        || lower.contains("/fbevents.js")
-        || lower.contains("/analytics.js")
-        || lower.contains("prebid")
 }
 
 pub(crate) fn set_extension_enabled(id: &str, enabled: bool) {
@@ -276,46 +150,92 @@ fn parse_content_scripts(ext_dir: &Path, val: &serde_json::Value) -> Vec<Content
                     .collect()
             })
             .unwrap_or_default();
+        let run_at = match item.get("run_at").and_then(|v| v.as_str()) {
+            Some("document_start") => RunAt::DocumentStart,
+            _ => RunAt::DocumentEnd,
+        };
         if !js_files.is_empty() || !css_files.is_empty() {
             rules.push(ContentScriptRule {
                 matches,
                 exclude_matches,
                 js_files,
                 css_files,
+                run_at,
             });
         }
     }
     rules
 }
 
-fn parse_userscript_matches(path: &Path) -> Vec<String> {
-    let Ok(content) = fs::read_to_string(path) else {
-        return vec!["<all_urls>".to_string()];
+struct UserscriptMeta {
+    name: Option<String>,
+    version: Option<String>,
+    description: Option<String>,
+    matches: Vec<String>,
+    excludes: Vec<String>,
+    run_at: RunAt,
+}
+
+fn parse_userscript_meta(path: &Path) -> UserscriptMeta {
+    let mut meta = UserscriptMeta {
+        name: None,
+        version: None,
+        description: None,
+        matches: Vec::new(),
+        excludes: Vec::new(),
+        run_at: RunAt::DocumentEnd,
     };
-    let mut matches = Vec::new();
-    for line in content.lines().take(60) {
+    let Ok(content) = fs::read_to_string(path) else {
+        meta.matches.push("<all_urls>".to_string());
+        return meta;
+    };
+    for line in content.lines().take(80) {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed
+        if let Some(rest) = trimmed.strip_prefix("// @name ") {
+            let v = rest.trim();
+            if !v.is_empty() && meta.name.is_none() {
+                meta.name = Some(v.to_string());
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("// @version") {
+            let v = rest.trim();
+            if !v.is_empty() {
+                meta.version = Some(v.to_string());
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("// @description ") {
+            let v = rest.trim();
+            if !v.is_empty() && meta.description.is_none() {
+                meta.description = Some(v.to_string());
+            }
+        } else if let Some(rest) = trimmed
             .strip_prefix("// @match")
             .or_else(|| trimmed.strip_prefix("// @include"))
         {
             let pat = rest.trim();
             if !pat.is_empty() {
-                matches.push(if pat == "*" {
+                meta.matches.push(if pat == "*" {
                     "<all_urls>".to_string()
                 } else {
                     pat.to_string()
                 });
             }
+        } else if let Some(rest) = trimmed.strip_prefix("// @exclude") {
+            let pat = rest.trim();
+            if !pat.is_empty() {
+                meta.excludes.push(pat.to_string());
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("// @run-at")
+            && rest.trim() == "document-start"
+        {
+            meta.run_at = RunAt::DocumentStart;
         }
         if trimmed == "// ==/UserScript==" {
             break;
         }
     }
-    if matches.is_empty() {
-        matches.push("<all_urls>".to_string());
+    if meta.matches.is_empty() {
+        meta.matches.push("<all_urls>".to_string());
     }
-    matches
+    meta
 }
 
 pub(crate) fn list_installed_extensions(lang: &str) -> Vec<ExtensionInfo> {
@@ -382,17 +302,18 @@ pub(crate) fn list_installed_extensions(lang: &str) -> Vec<ExtensionInfo> {
                 content_scripts,
             });
         } else if file_name.ends_with(".user.js") || file_name.ends_with(".js") {
-            let matches = parse_userscript_matches(&path);
+            let meta = parse_userscript_meta(&path);
             list.push(ExtensionInfo {
                 id: file_name.clone(),
-                name: file_name,
-                version: None,
-                description: Some("Userscript (.user.js)".to_string()),
+                name: meta.name.unwrap_or(file_name),
+                version: meta.version,
+                description: meta.description.or_else(|| Some("Userscript (.user.js)".to_string())),
                 content_scripts: vec![ContentScriptRule {
-                    matches,
-                    exclude_matches: Vec::new(),
+                    matches: meta.matches,
+                    exclude_matches: meta.excludes,
                     js_files: vec![path.clone()],
                     css_files: Vec::new(),
+                    run_at: meta.run_at,
                 }],
                 path,
                 kind: ExtensionKind::Userscript,
@@ -467,6 +388,7 @@ pub(crate) fn build_injection_script_for_url(
     url: &Url,
     lang: &str,
     content_scripts_enabled: bool,
+    run_at: RunAt,
 ) -> Option<String> {
     if !content_scripts_enabled || !matches!(url.scheme(), "http" | "https") {
         return None;
@@ -479,7 +401,15 @@ pub(crate) fn build_injection_script_for_url(
         if !ext.enabled || ext.content_scripts.is_empty() {
             continue;
         }
+        let ext_id_json = serde_json::to_string(&ext.id).unwrap_or_default();
+        let ext_name_json = serde_json::to_string(&ext.name).unwrap_or_default();
+        let ext_ver_json = serde_json::to_string(ext.version.as_deref().unwrap_or("1.0"))
+            .unwrap_or_default();
+
         for rule in &ext.content_scripts {
+            if rule.run_at != run_at {
+                continue;
+            }
             let matched = rule.matches.iter().any(|p| match_pattern_matches(p, url));
             let excluded = rule
                 .exclude_matches
@@ -492,7 +422,6 @@ pub(crate) fn build_injection_script_for_url(
             for css_path in &rule.css_files {
                 if let Ok(css) = fs::read_to_string(css_path) {
                     let encoded = serde_json::to_string(&css).unwrap_or_default();
-                    let ext_id_json = serde_json::to_string(&ext.id).unwrap_or_default();
                     chunks.push(format!(
                         "(function(){{try{{var s=document.createElement('style');s.setAttribute('data-librenav-ext',{ext_id_json});s.textContent={encoded};(document.head||document.documentElement).appendChild(s);}}catch(e){{}}}})();"
                     ));
@@ -502,7 +431,64 @@ pub(crate) fn build_injection_script_for_url(
             for js_path in &rule.js_files {
                 if let Ok(js) = fs::read_to_string(js_path) {
                     chunks.push(format!(
-                        "(function(){{try{{\n{js}\n}}catch(e){{console.warn('[LibreNav ext]',e);}}}})();"
+                        r#"(function(){{
+  var __ln_prefix = 'ln_gm_' + {ext_id_json} + '_';
+  var GM_info = {{ scriptHandler: 'LibreNav', version: '0.7.0', script: {{ name: {ext_name_json}, version: {ext_ver_json} }} }};
+  var unsafeWindow = window;
+  function GM_addStyle(css) {{
+    try {{
+      var st = document.createElement('style');
+      st.setAttribute('data-librenav-gm', {ext_id_json});
+      st.textContent = css;
+      (document.head || document.documentElement).appendChild(st);
+      return st;
+    }} catch(e) {{}}
+  }}
+  function GM_getValue(k, d) {{
+    try {{
+      var raw = localStorage.getItem(__ln_prefix + k);
+      return raw === null ? d : JSON.parse(raw);
+    }} catch(_) {{ return d; }}
+  }}
+  function GM_setValue(k, v) {{
+    try {{ localStorage.setItem(__ln_prefix + k, JSON.stringify(v)); }} catch(_) {{}}
+  }}
+  function GM_deleteValue(k) {{
+    try {{ localStorage.removeItem(__ln_prefix + k); }} catch(_) {{}}
+  }}
+  function GM_listValues() {{
+    var out = [];
+    try {{
+      for (var i = 0; i < localStorage.length; i++) {{
+        var key = localStorage.key(i);
+        if (key && key.indexOf(__ln_prefix) === 0) out.push(key.slice(__ln_prefix.length));
+      }}
+    }} catch(_) {{}}
+    return out;
+  }}
+  function GM_openInTab(u) {{ window.open(u, '_blank'); }}
+  function GM_xmlhttpRequest(details) {{
+    if (!details || !details.url) return;
+    fetch(details.url, {{ method: details.method || 'GET', headers: details.headers || {{}}, body: details.data }})
+      .then(function(r){{ return r.text().then(function(t){{
+        if (typeof details.onload === 'function') details.onload({{ status: r.status, statusText: r.statusText, responseText: t, response: t }});
+      }}); }})
+      .catch(function(err){{ if (typeof details.onerror === 'function') details.onerror(err); }});
+  }}
+  var GM = {{
+    info: GM_info,
+    addStyle: function(c) {{ return Promise.resolve(GM_addStyle(c)); }},
+    getValue: function(k, d) {{ return Promise.resolve(GM_getValue(k, d)); }},
+    setValue: function(k, v) {{ GM_setValue(k, v); return Promise.resolve(); }},
+    deleteValue: function(k) {{ GM_deleteValue(k); return Promise.resolve(); }},
+    listValues: function() {{ return Promise.resolve(GM_listValues()); }},
+    xmlHttpRequest: GM_xmlhttpRequest,
+    openInTab: GM_openInTab
+  }};
+  try {{
+{js}
+  }} catch(e) {{ console.warn('[LibreNav ext ' + {ext_id_json} + ']', e); }}
+}})();"#
                     ));
                 }
             }
@@ -513,7 +499,6 @@ pub(crate) fn build_injection_script_for_url(
         return None;
     }
 
-    // Minimal WebExtension compatibility shim for content scripts.
     let shim = r#"
 (function(){
   if (!window.chrome) window.chrome = {};
@@ -551,6 +536,64 @@ pub(crate) fn build_injection_script_for_url(
 "#;
 
     Some(format!("{shim}\n{}", chunks.join("\n")))
+}
+
+pub(crate) fn install_userscript_url(input: &str) -> Result<String, String> {
+    let trimmed = input.trim();
+    let Some(dest_dir) = extensions_directory_path() else {
+        return Err("Dossier des extensions introuvable.".into());
+    };
+    let _ = fs::create_dir_all(&dest_dir);
+
+    // Support GreasyFork script page URLs directly
+    let download_url = if trimmed.contains("greasyfork.org/") && !trimmed.ends_with(".user.js") {
+        if let Some(pos) = trimmed.find("/scripts/") {
+            let rest = &trimmed[pos + 9..];
+            let seg = rest.split('/').next().unwrap_or("");
+            let id_part = seg.split('-').next().unwrap_or("");
+            if !id_part.is_empty() && id_part.chars().all(|c| c.is_ascii_digit()) {
+                format!("https://greasyfork.org/scripts/{id_part}/code/script.user.js")
+            } else {
+                return Err("URL GreasyFork non reconnue.".into());
+            }
+        } else {
+            return Err("URL GreasyFork non reconnue.".into());
+        }
+    } else if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        trimmed.to_string()
+    } else {
+        return Err("Saisissez une URL GreasyFork ou .user.js valide.".into());
+    };
+
+    let parsed = Url::parse(&download_url).map_err(|_| "URL invalide.".to_string())?;
+    let mut file_name = parsed
+        .path_segments()
+        .and_then(|mut s| s.next_back())
+        .unwrap_or("userscript.user.js")
+        .to_string();
+    if !file_name.ends_with(".user.js") {
+        file_name.push_str(".user.js");
+    }
+    if file_name == "script.user.js"
+        && let Some(id) = parsed.path().split('/').nth(2)
+    {
+        file_name = format!("greasyfork-{id}.user.js");
+    }
+
+    let dest = dest_dir.join(&file_name);
+    let status = std::process::Command::new("curl")
+        .args(["-sSL", "--max-time", "20", "-o"])
+        .arg(&dest)
+        .arg(&download_url)
+        .status()
+        .map_err(|e| format!("curl a échoué : {e}"))?;
+
+    if !status.success() || !dest.is_file() {
+        return Err("Téléchargement du script utilisateur échoué.".into());
+    }
+    let meta = parse_userscript_meta(&dest);
+    let title = meta.name.unwrap_or(file_name);
+    Ok(format!("Userscript '{title}' installé avec succès !"))
 }
 
 pub(crate) fn find_ext_id(input: &str) -> Result<String, String> {
@@ -801,15 +844,6 @@ fn read_manifest_summary(ext_dir: &Path, fallback_name: &str, lang: &str) -> (St
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_adblock_blocks_trackers_but_allows_first_party() {
-        let page = Url::parse("https://example.org/article").unwrap();
-        let tracker = Url::parse("https://www.google-analytics.com/analytics.js").unwrap();
-        let first_party = Url::parse("https://example.org/app.js").unwrap();
-        assert!(should_block_request(&tracker, Some(&page)));
-        assert!(!should_block_request(&first_party, Some(&page)));
-    }
 
     #[test]
     fn test_match_pattern_wildcards() {

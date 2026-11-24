@@ -847,7 +847,7 @@ impl WebViewDelegate for RunningAppState {
         #[cfg(not(any(target_os = "android", target_env = "ohos")))]
         {
             let page_url = webview.url();
-            if crate::desktop::extensions::should_block_request(
+            if crate::desktop::adblocker::check_request(
                 load.request().url.as_url(),
                 page_url.as_ref(),
             ) {
@@ -861,17 +861,30 @@ impl WebViewDelegate for RunningAppState {
         self.window_for_webview(&webview).set_needs_update();
 
         #[cfg(not(any(target_os = "android", target_env = "ohos")))]
-        if status == LoadStatus::Complete
+        if matches!(status, LoadStatus::HeadParsed | LoadStatus::Complete)
             && let Some(page_url) = webview.url()
         {
+            if status == LoadStatus::HeadParsed
+                && let Some(cosmetic_js) =
+                    crate::desktop::adblocker::cosmetic_script_for_url(&page_url)
+            {
+                webview.evaluate_javascript(cosmetic_js, |_| {});
+            }
+
             let settings: crate::desktop::settings::BrowserSettings =
                 crate::desktop::settings::load_json_profile(
                     crate::desktop::settings::LIBRENAV_SETTINGS_FILE,
                 );
+            let run_at = if status == LoadStatus::HeadParsed {
+                crate::desktop::extensions::RunAt::DocumentStart
+            } else {
+                crate::desktop::extensions::RunAt::DocumentEnd
+            };
             if let Some(script) = crate::desktop::extensions::build_injection_script_for_url(
                 &page_url,
                 &settings.language,
                 settings.content_scripts_enabled,
+                run_at,
             ) {
                 webview.evaluate_javascript(script, |_| {});
             }

@@ -71,6 +71,7 @@ webxr = ["servo/webxr"]
 
 [dependencies]
 accesskit = { workspace = true }
+adblock = { workspace = true }
 bpaf = { workspace = true, features = ["derive"] }
 cfg-if = { workspace = true }
 crossbeam-channel = { workspace = true }

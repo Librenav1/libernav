@@ -55,10 +55,12 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::Window;
 
-use crate::desktop::event_loop::AppEvent;
-use crate::desktop::extensions::{
-    ExtensionKind, blocked_requests_count, list_installed_extensions, sync_adblock_settings,
+use crate::desktop::adblocker::{
+    blocked_requests_count, list_filter_lists, recent_blocked_urls,
+    sync_settings as sync_adblock_settings,
 };
+use crate::desktop::event_loop::AppEvent;
+use crate::desktop::extensions::{ExtensionKind, list_installed_extensions};
 use crate::desktop::headed_window;
 pub(crate) use crate::desktop::settings::BrowserSurface;
 use crate::desktop::settings::{
@@ -883,13 +885,22 @@ impl Gui {
                                             ui.set_min_width(300.0);
                                             ui.vertical(|ui| {
                                                 ui.horizontal(|ui| {
-                                                    ui.heading("uBlock Origin");
-                                                    ui.weak("v1.75.0");
+                                                    ui.label(
+                                                        egui::RichText::new("Bouclier LibreNav")
+                                                            .size(15.5)
+                                                            .color(palette.text_primary)
+                                                            .strong(),
+                                                    );
+                                                    ui.label(
+                                                        egui::RichText::new("adblock-rust")
+                                                            .size(11.5)
+                                                            .color(palette.text_secondary),
+                                                    );
                                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                         if browser_settings.ublock_enabled {
-                                                            ui.colored_label(Color32::from_rgb(52, 168, 83), t(GuiText::ActiveStatus, lang));
+                                                            ui.colored_label(palette.success, t(GuiText::ActiveStatus, lang));
                                                         } else {
-                                                            ui.colored_label(Color32::from_rgb(234, 67, 53), "✕ Off");
+                                                            ui.colored_label(palette.danger, "Off");
                                                         }
                                                     });
                                                 });
@@ -969,39 +980,35 @@ impl Gui {
                                                 ui.separator();
                                                 ui.add_space(8.0);
 
+                                                let lists = list_filter_lists();
+                                                let total_rules: usize = lists.iter().map(|l| l.line_count).sum();
+                                                let active_lists = lists.iter().filter(|l| l.installed).count();
                                                 ui.label(
-                                                    egui::RichText::new("Interfaces officielles uBlock :")
-                                                        .strong()
-                                                        .size(13.0)
+                                                    egui::RichText::new(format!(
+                                                        "Listes actives : {active_lists}/{} ({total_rules} règles)",
+                                                        lists.len()
+                                                    ))
+                                                    .size(12.0)
+                                                    .color(palette.text_secondary),
                                                 );
-                                                ui.add_space(4.0);
-
-                                                for (label, target_url) in [
-                                                    ("Popup officiel uBlock Origin", "resource:///ublock/popup-fenix.html"),
-                                                    ("Tableau de bord & filtres uBlock", "resource:///ublock/dashboard.html"),
-                                                    ("Filtres tiers (3p-filters.html)", "resource:///ublock/3p-filters.html"),
-                                                ] {
-                                                    let btn = egui::Button::new(
-                                                        egui::RichText::new(label)
-                                                            .size(12.5)
-                                                            .color(palette.text_primary),
-                                                    )
-                                                    .fill(palette.tab_hover_bg)
-                                                    .stroke(Stroke::NONE)
-                                                    .corner_radius(egui::CornerRadius::same(8));
-                                                    if ui.add_sized([ui.available_width(), 28.0], btn).clicked() {
-                                                        window.queue_user_interface_command(UserInterfaceCommand::Go(target_url.into()));
-                                                        ui.close();
+                                                let recent = recent_blocked_urls();
+                                                if !recent.is_empty() {
+                                                    ui.add_space(6.0);
+                                                    for blocked_url in recent.iter().take(4) {
+                                                        ui.label(
+                                                            egui::RichText::new(truncate_with_ellipsis(blocked_url, 42))
+                                                                .size(11.0)
+                                                                .color(palette.text_secondary),
+                                                        );
                                                     }
-                                                    ui.add_space(4.0);
                                                 }
 
-                                                ui.add_space(4.0);
+                                                ui.add_space(8.0);
                                                 ui.separator();
                                                 ui.add_space(6.0);
 
                                                 let manage_btn = egui::Button::new(
-                                                    egui::RichText::new(t(GuiText::ManageExtensions, lang))
+                                                    egui::RichText::new("Listes de filtres & extensions")
                                                         .size(13.0)
                                                         .color(palette.text_on_accent)
                                                         .strong(),
